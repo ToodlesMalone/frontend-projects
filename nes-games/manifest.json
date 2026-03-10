@@ -1,7 +1,7 @@
 {
   "name": "Tiki Blanco Arcade",
   "short_name": "Tiki Arcade",
-  "description": "Tiki Blanco Arcade — Tiki Stack, Skull Smash, Spirit Hunt",
+  "description": "Tiki Blanco Arcade — Tiki Stacker, Skull Smasher, Spirit Hunter",
   "start_url": "./index.html",
   "display": "fullscreen",
   "orientation": "portrait",

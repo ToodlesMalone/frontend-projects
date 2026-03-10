@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>Tiki Stack — Tiki Blanco Arcade</title>
+  <title>Tiki Stacker — Tiki Blanco Arcade</title>
   <link rel="stylesheet" href="style.css"/>
   <style>
     #game-wrap { gap: 4px; }
@@ -17,7 +17,7 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>TIKI STACK</h1>
+  <h1>TIKI STACKER</h1>
   <p>Stack the ruins before the spirits rise.<br/>Each level the dark grows faster.</p>
   <button class="overlay-btn" id="overlay-btn">ENTER THE LAIR</button>
   <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
@@ -235,7 +235,7 @@ function updateHUD(){
 // ── Overlay ────────────────────────────────────────
 function showOverlay(){
   const ov=document.getElementById('overlay');
-  ov.querySelector('h1').textContent= gameOver?'THE SPIRITS RISE':'TIKI STACK';
+  ov.querySelector('h1').textContent= gameOver?'THE SPIRITS RISE':'TIKI STACKER';
   ov.querySelector('p').textContent = gameOver?`Score: ${score}\nLevel: ${level}`:'Stack the ruins before the spirits rise.\nEach level the dark grows faster.';
   ov.style.display='flex';
 }
