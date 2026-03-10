@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>TETRIS — NES Games</title>
+  <title>Tiki Stack — Tiki Blanco Arcade</title>
   <link rel="stylesheet" href="style.css"/>
   <style>
     #game-wrap { gap: 4px; }
@@ -17,10 +17,10 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>TETRIS</h1>
-  <p>Clear lines to score.<br/>Survive as long as you can!</p>
-  <button class="overlay-btn" id="overlay-btn">START GAME</button>
-  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+  <h1>TIKI STACK</h1>
+  <p>Stack the ruins before the spirits rise.<br/>Each level the dark grows faster.</p>
+  <button class="overlay-btn" id="overlay-btn">ENTER THE LAIR</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
 </div>
 
 <div id="game-wrap">
@@ -66,13 +66,13 @@
 const COLS = 10, ROWS = 20;
 const COLORS = [
   null,
-  '#00f0f0', // I - cyan
-  '#0000f0', // J - blue
-  '#f0a000', // L - orange
-  '#f0f000', // O - yellow
-  '#00f000', // S - green
-  '#a000f0', // T - purple
-  '#f00000', // Z - red
+  '#c9a052', // I - bamboo gold
+  '#8b2200', // J - dark rust
+  '#d4681a', // L - burnt orange
+  '#c84b2a', // O - terracotta
+  '#3a6a1a', // S - jungle green
+  '#e8d4a8', // T - bone
+  '#7a1a00', // Z - blood maroon
 ];
 
 const PIECES = [
@@ -194,11 +194,11 @@ function drawCell(c2d,x,y,color,cellSize){
 }
 
 function draw(){
-  ctx.fillStyle='#0f0f0f';
+  ctx.fillStyle='#080808';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
   // grid lines
-  ctx.strokeStyle='#1a1a2e';
+  ctx.strokeStyle='#1a0800';
   ctx.lineWidth=0.5;
   for(let r=0;r<ROWS;r++){ ctx.beginPath();ctx.moveTo(0,r*CELL);ctx.lineTo(canvas.width,r*CELL);ctx.stroke(); }
   for(let c=0;c<COLS;c++){ ctx.beginPath();ctx.moveTo(c*CELL,0);ctx.lineTo(c*CELL,canvas.height);ctx.stroke(); }
@@ -218,7 +218,7 @@ function draw(){
 }
 
 function drawNext(){
-  nextCtx.fillStyle='#0f0f0f';
+  nextCtx.fillStyle='#080808';
   nextCtx.fillRect(0,0,80,80);
   const mat=PIECES[nextType];
   const off=Math.floor((4-mat[0].length)/2);
@@ -235,8 +235,8 @@ function updateHUD(){
 // ── Overlay ────────────────────────────────────────
 function showOverlay(){
   const ov=document.getElementById('overlay');
-  ov.querySelector('h1').textContent= gameOver?'GAME OVER':'TETRIS';
-  ov.querySelector('p').textContent = gameOver?`Score: ${score}\nLevel: ${level}`:'Clear lines to score.\nSurvive as long as you can!';
+  ov.querySelector('h1').textContent= gameOver?'THE SPIRITS RISE':'TIKI STACK';
+  ov.querySelector('p').textContent = gameOver?`Score: ${score}\nLevel: ${level}`:'Stack the ruins before the spirits rise.\nEach level the dark grows faster.';
   ov.style.display='flex';
 }
 document.getElementById('overlay-btn').addEventListener('click',()=>{

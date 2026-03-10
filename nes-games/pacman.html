@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>PAC-MAN — NES Games</title>
+  <title>Spirit Hunt — Tiki Blanco Arcade</title>
   <link rel="stylesheet" href="style.css"/>
   <style>
     #game-wrap { gap: 0; }
@@ -15,10 +15,10 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>PAC-MAN</h1>
-  <p>Eat all dots &amp; power pellets.<br/>Avoid the ghosts!</p>
-  <button class="overlay-btn" id="overlay-btn">START GAME</button>
-  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+  <h1>SPIRIT HUNT</h1>
+  <p>Devour the offerings under the blood moon.<br/>Do not let the spirits catch you.</p>
+  <button class="overlay-btn" id="overlay-btn">ENTER THE LAIR</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
 </div>
 
 <div id="game-wrap">
@@ -105,8 +105,8 @@ let mouthAngle=0, mouthDir=1;
 let animId;
 let inputDir={x:1,y:0}, nextDir={x:1,y:0};
 
-const GHOST_COLORS=['#ff0000','#ffb8ff','#00ffff','#ffb852'];
-const GHOST_FRIGHTENED='#2222cc';
+const GHOST_COLORS=['#c84b2a','#e8d4a8','#c9a052','#8b2200'];
+const GHOST_FRIGHTENED='#3a5a1a';
 
 function deepCopyMap(){
   return MAP_TEMPLATE.map(r=>[...r]);
@@ -266,23 +266,29 @@ function draw(){
       const tile=map[r][c];
       const px=c*CELL, py=r*CELL;
       if(tile===1){
-        ctx.fillStyle='#1a1aff';
+        ctx.fillStyle='#5c1a00';
         ctx.fillRect(px,py,CELL,CELL);
         // Inner shade
-        ctx.fillStyle='#0000aa';
+        ctx.fillStyle='#3a0d00';
         ctx.fillRect(px+2,py+2,CELL-4,CELL-4);
       } else if(tile===0){
-        ctx.fillStyle='#ffff99';
+        ctx.fillStyle='#c9a052';
         ctx.beginPath();
         ctx.arc(px+CELL/2,py+CELL/2,CELL*0.1,0,Math.PI*2);
         ctx.fill();
       } else if(tile===3){
-        ctx.fillStyle='#ffff00';
+        ctx.fillStyle='#d4681a';
         ctx.beginPath();
         ctx.arc(px+CELL/2,py+CELL/2,CELL*0.25,0,Math.PI*2);
         ctx.fill();
+        // glow ring
+        ctx.strokeStyle='rgba(212,104,26,0.4)';
+        ctx.lineWidth=1;
+        ctx.beginPath();
+        ctx.arc(px+CELL/2,py+CELL/2,CELL*0.38,0,Math.PI*2);
+        ctx.stroke();
       } else if(tile===4){
-        ctx.fillStyle='#ff88aa';
+        ctx.fillStyle='#8b3a1a';
         ctx.fillRect(px,py+CELL*0.4,CELL,CELL*0.2);
       }
     }
@@ -296,7 +302,7 @@ function draw(){
   if(pac.dx===-1) facingAngle=Math.PI;
   if(pac.dy===1)  facingAngle=Math.PI*0.5;
   if(pac.dy===-1) facingAngle=Math.PI*1.5;
-  ctx.fillStyle='#ffff00';
+  ctx.fillStyle='#d4b060';
   ctx.beginPath();
   ctx.moveTo(pac.x*CELL+CELL/2, pac.y*CELL+CELL/2);
   ctx.arc(pac.x*CELL+CELL/2, pac.y*CELL+CELL/2, pw,
@@ -332,7 +338,7 @@ function draw(){
       ctx.fillStyle='#fff';
       ctx.beginPath(); ctx.arc(gx-eyeOffX,gy-gr*0.1,gr*0.25,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.arc(gx+eyeOffX,gy-gr*0.1,gr*0.25,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle='#00f';
+      ctx.fillStyle='#3a1500';
       ctx.beginPath(); ctx.arc(gx-eyeOffX+g.dx*gr*0.1,gy-gr*0.1+g.dy*gr*0.1,gr*0.12,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.arc(gx+eyeOffX+g.dx*gr*0.1,gy-gr*0.1+g.dy*gr*0.1,gr*0.12,0,Math.PI*2); ctx.fill();
     }
@@ -348,7 +354,7 @@ function updateHUD(){
 // ── Overlay ────────────────────────────────────────
 function showOverlay(){
   const ov=document.getElementById('overlay');
-  ov.querySelector('h1').textContent='GAME OVER';
+  ov.querySelector('h1').textContent='THE SPIRITS CLAIM YOU';
   ov.querySelector('p').textContent=`Score: ${score}`;
   ov.style.display='flex';
 }

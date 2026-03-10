@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <title>BREAKOUT — NES Games</title>
+  <title>Skull Smash — Tiki Blanco Arcade</title>
   <link rel="stylesheet" href="style.css"/>
   <style>
     #game-wrap { gap: 4px; }
@@ -17,10 +17,10 @@
 </head>
 <body>
 <div id="overlay">
-  <h1>BREAKOUT</h1>
-  <p>Break all the bricks!<br/>Tap A to launch the ball.</p>
-  <button class="overlay-btn" id="overlay-btn">START GAME</button>
-  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+  <h1>SKULL SMASH</h1>
+  <p>Shatter the bone wall with a cursed stone.<br/>Tap A to hurl the first throw.</p>
+  <button class="overlay-btn" id="overlay-btn">ENTER THE LAIR</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
 </div>
 
 <div id="game-wrap">
@@ -76,8 +76,8 @@ let gameOver, paused, won;
 let animId;
 let keysDown = {};
 
-// Colors per row (NES-ish palette)
-const rowColors = ['#e52222','#e57722','#e5e522','#22e522','#2222e5','#9922e5'];
+// Colors per row (Tiki Blanco palette)
+const rowColors = ['#c84b2a','#8b2200','#c9a052','#3a6a1a','#4a2808','#7a1a00'];
 
 function resize(){
   const avail = Math.min(window.innerWidth, 480);
@@ -221,7 +221,7 @@ function drawRoundRect(x,y,w,h,r,fill){
 }
 
 function draw(){
-  ctx.fillStyle='#0f0f0f';
+  ctx.fillStyle='#080808';
   ctx.fillRect(0,0,W,H);
 
   // Bricks
@@ -234,26 +234,26 @@ function draw(){
 
   // Paddle
   const grad=ctx.createLinearGradient(px,py,px,py+PADDLE_H);
-  grad.addColorStop(0,'#c0c0e0');
-  grad.addColorStop(1,'#707090');
+  grad.addColorStop(0,'#d4b060');
+  grad.addColorStop(1,'#8b6914');
   drawRoundRect(px,py,pWidth,PADDLE_H,4,grad);
 
   // Ball
   ctx.beginPath();
   ctx.arc(bx,by,BALL_R,0,Math.PI*2);
-  ctx.fillStyle='#f8f8f8';
+  ctx.fillStyle='#e8d4a8';
   ctx.fill();
-  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.fillStyle='rgba(255,240,200,0.5)';
   ctx.beginPath();
   ctx.arc(bx-2,by-2,3,0,Math.PI*2);
   ctx.fill();
 
   // "Tap A to launch" hint
   if(!launched){
-    ctx.fillStyle='rgba(255,255,255,0.4)';
-    ctx.font=`${Math.round(H*0.025)}px "Courier New"`;
+    ctx.fillStyle='rgba(201,160,82,0.5)';
+    ctx.font=`italic ${Math.round(H*0.025)}px 'Lora', Georgia, serif`;
     ctx.textAlign='center';
-    ctx.fillText('TAP A TO LAUNCH',W/2,H*0.75);
+    ctx.fillText('tap A to hurl the stone',W/2,H*0.75);
   }
 }
 
@@ -266,7 +266,7 @@ function updateHUD(){
 // ── Overlay ────────────────────────────────────────
 function showOverlay(){
   const ov=document.getElementById('overlay');
-  ov.querySelector('h1').textContent='GAME OVER';
+  ov.querySelector('h1').textContent='THE WALL HOLDS';
   ov.querySelector('p').textContent=`Score: ${score}`;
   ov.style.display='flex';
 }
