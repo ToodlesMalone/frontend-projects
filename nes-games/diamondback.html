@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>Diamondback — Tiki Blanco Arcade</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #btn-a, #btn-b { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>DIAMONDBACK</h1>
+  <p>Guide the serpent through the badlands.<br/>Feed — or be forgotten.</p>
+  <button class="overlay-btn" id="overlay-btn">ENTER THE LAIR</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">best</span><span id="best">0</span></span>
+    <span><span class="label">length</span><span id="length">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#444;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">—</button>
+        <span style="font-size:10px;color:#444;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){"use strict";
+const COLS=20, ROWS=20;
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let CELL=16, animId, lastTime;
+
+function resize(){
+  const avail=Math.min(window.innerWidth,480);
+  const hudH=document.getElementById('hud').offsetHeight;
+  const padH=document.getElementById('gamepad').offsetHeight;
+  const avH=window.innerHeight-hudH-padH-20;
+  CELL=Math.min(Math.floor(avail/COLS), Math.floor(avH/ROWS));
+  canvas.width=CELL*COLS; canvas.height=CELL*ROWS;
+  draw();
+}
+
+let snake, dir, nextDir, food, score, hi=0, speed, acc, dead;
+
+function newGame(){
+  snake=[{x:10,y:10},{x:9,y:10},{x:8,y:10}];
+  dir={x:1,y:0}; nextDir={x:1,y:0};
+  score=0; speed=150; acc=0; dead=false;
+  placeFood(); updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+}
+
+function placeFood(){
+  do{ food={x:Math.floor(Math.random()*COLS),y:Math.floor(Math.random()*ROWS)}; }
+  while(snake.some(s=>s.x===food.x&&s.y===food.y));
+}
+
+function loop(ts){
+  if(dead){animId=null;return;}
+  const dt=Math.min(ts-lastTime,100);
+  lastTime=ts; acc+=dt;
+  while(acc>=speed){ acc-=speed; tick(); if(dead) break; }
+  draw();
+  if(!dead) animId=requestAnimationFrame(loop);
+}
+
+function tick(){
+  dir=nextDir;
+  const head={x:snake[0].x+dir.x, y:snake[0].y+dir.y};
+  if(head.x<0||head.x>=COLS||head.y<0||head.y>=ROWS||snake.some(s=>s.x===head.x&&s.y===head.y)){
+    dead=true; draw(); showOverlay(); return;
+  }
+  snake.unshift(head);
+  if(head.x===food.x&&head.y===food.y){
+    score+=10; speed=Math.max(60,speed-3);
+    if(score>hi) hi=score;
+    placeFood(); updateHUD();
+  } else {
+    snake.pop();
+  }
+}
+
+function draw(){
+  ctx.fillStyle='#080808'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle='#1a0800'; ctx.lineWidth=0.5;
+  for(let r=0;r<ROWS;r++){ctx.beginPath();ctx.moveTo(0,r*CELL);ctx.lineTo(canvas.width,r*CELL);ctx.stroke();}
+  for(let c=0;c<COLS;c++){ctx.beginPath();ctx.moveTo(c*CELL,0);ctx.lineTo(c*CELL,canvas.height);ctx.stroke();}
+
+  // Food diamond
+  const fx=food.x*CELL+CELL/2, fy=food.y*CELL+CELL/2, fr=CELL/2-2;
+  ctx.fillStyle='#b03010';
+  ctx.beginPath(); ctx.moveTo(fx,fy-fr); ctx.lineTo(fx+fr,fy); ctx.lineTo(fx,fy+fr); ctx.lineTo(fx-fr,fy); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='#d4681a'; ctx.lineWidth=1; ctx.stroke();
+
+  // Snake
+  snake.forEach((seg,i)=>{
+    const x=seg.x*CELL+1, y=seg.y*CELL+1, s=CELL-2;
+    if(i===0){
+      ctx.fillStyle='#d4b060';
+      ctx.fillRect(x,y,s,s);
+      ctx.fillStyle='rgba(255,255,255,0.2)';
+      ctx.fillRect(x,y,s,3);
+      // Eyes
+      ctx.fillStyle='#080808';
+      if(dir.x===1){ ctx.fillRect(x+s-4,y+2,2,2); ctx.fillRect(x+s-4,y+s-4,2,2); }
+      else if(dir.x===-1){ ctx.fillRect(x+2,y+2,2,2); ctx.fillRect(x+2,y+s-4,2,2); }
+      else if(dir.y===-1){ ctx.fillRect(x+2,y+2,2,2); ctx.fillRect(x+s-4,y+2,2,2); }
+      else { ctx.fillRect(x+2,y+s-4,2,2); ctx.fillRect(x+s-4,y+s-4,2,2); }
+    } else {
+      const t=i/snake.length;
+      ctx.fillStyle=`hsl(${100-t*30},${60-t*20}%,${35-t*10}%)`;
+      ctx.fillRect(x,y,s,s);
+      ctx.fillStyle='rgba(255,255,255,0.08)';
+      ctx.fillRect(x,y,s,2);
+    }
+  });
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('best').textContent=hi;
+  document.getElementById('length').textContent=snake.length;
+}
+
+function showOverlay(){
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='DIAMONDBACK';
+  ov.querySelector('p').innerHTML=`The serpent has fallen.<br/>Score: <strong style="color:#d4b060">${score}</strong>`;
+  ov.querySelector('.overlay-btn').textContent='RISE AGAIN';
+  ov.style.display='flex';
+}
+
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+function steer(dx,dy){
+  if(dx!==0&&dir.x===0) nextDir={x:dx,y:0};
+  if(dy!==0&&dir.y===0) nextDir={x:0,y:dy};
+}
+
+function addDpad(id,dx,dy){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('pressed');steer(dx,dy);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();el.classList.remove('pressed');},{passive:false});
+  el.addEventListener('mousedown',()=>steer(dx,dy));
+}
+addDpad('btn-up',0,-1); addDpad('btn-down',0,1);
+addDpad('btn-left',-1,0); addDpad('btn-right',1,0);
+
+document.addEventListener('keydown',e=>{
+  switch(e.code){
+    case 'ArrowUp':    steer(0,-1); break;
+    case 'ArrowDown':  steer(0,1);  break;
+    case 'ArrowLeft':  steer(-1,0); break;
+    case 'ArrowRight': steer(1,0);  break;
+  }
+});
+
+let tx,ty;
+canvas.addEventListener('touchstart',e=>{e.preventDefault();tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+  if(Math.abs(dx)>Math.abs(dy)){if(Math.abs(dx)>15)steer(dx>0?1:-1,0);}
+  else{if(Math.abs(dy)>15)steer(0,dy>0?1:-1);}
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>

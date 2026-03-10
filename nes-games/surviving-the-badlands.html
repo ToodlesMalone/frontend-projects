@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>Surviving the Badlands — Tiki Blanco Arcade</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #btn-a, #btn-b { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>SURVIVING THE BADLANDS</h1>
+  <p>Cross the iron road and the blood river.<br/>Reach the other side — or be swallowed whole.</p>
+  <button class="overlay-btn" id="overlay-btn">CROSS NOW</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+    <span><span class="label">time</span><span id="timer">30</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#444;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">—</button>
+        <span style="font-size:10px;color:#444;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){"use strict";
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let CELL, W, H, animId, lastTime;
+
+const ROWS=13; // 0=bottom safe, 1-5=road, 6=median, 7-11=river, 12=top goals
+const GOAL_COUNT=5;
+
+function resize(){
+  const aw=Math.min(window.innerWidth,480);
+  const hudH=document.getElementById('hud').offsetHeight;
+  const padH=document.getElementById('gamepad').offsetHeight;
+  const ah=window.innerHeight-hudH-padH-16;
+  CELL=Math.min(Math.floor(aw/13),Math.floor(ah/ROWS));
+  W=CELL*13; H=CELL*ROWS;
+  canvas.width=W; canvas.height=H;
+  if(!dead) draw();
+}
+
+// Lane definitions
+function makeLanes(){
+  return [
+    // row 1-5: road
+    {row:1,  spd:0.04,  dir:1,  color:'#7a3000', objs:makeCars(1)},
+    {row:2,  spd:0.055, dir:-1, color:'#7a3000', objs:makeCars(-1)},
+    {row:3,  spd:0.035, dir:1,  color:'#7a3000', objs:makeCars(1)},
+    {row:4,  spd:0.06,  dir:-1, color:'#7a3000', objs:makeCars(-1)},
+    {row:5,  spd:0.045, dir:1,  color:'#7a3000', objs:makeCars(1)},
+    // row 7-11: river
+    {row:7,  spd:0.025, dir:-1, color:'#0a1a3a', objs:makeLogs(-1)},
+    {row:8,  spd:0.04,  dir:1,  color:'#0a1a3a', objs:makeLogs(1)},
+    {row:9,  spd:0.03,  dir:-1, color:'#0a1a3a', objs:makeLogs(-1)},
+    {row:10, spd:0.035, dir:1,  color:'#0a1a3a', objs:makeLogs(1)},
+    {row:11, spd:0.02,  dir:-1, color:'#0a1a3a', objs:makeLogs(-1)},
+  ];
+}
+
+function makeCars(dir){
+  const cars=[];
+  const n=2+Math.floor(Math.random()*2);
+  for(let i=0;i<n;i++) cars.push({x:(i/n)*13+(dir<0?0.5:0), len:2+Math.floor(Math.random()*2)});
+  return cars;
+}
+function makeLogs(dir){
+  const logs=[];
+  const n=2+Math.floor(Math.random()*2);
+  for(let i=0;i<n;i++) logs.push({x:(i/n)*13+(dir<0?0.3:0.1), len:2+Math.floor(Math.random()*3)});
+  return logs;
+}
+
+let player, lanes, goals, score, lives, timeLeft, dead, gameOver, deathTimer, level;
+let inputLock=false;
+
+function newGame(){
+  score=0; lives=3; level=1; dead=false; gameOver=false;
+  resetPlayer();
+  lanes=makeLanes();
+  goals=Array(GOAL_COUNT).fill(false);
+  timeLeft=30;
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+}
+
+function resetPlayer(){
+  player={col:6, row:0, riding:null, alive:true};
+  timeLeft=30; dead=false; deathTimer=0; inputLock=false;
+}
+
+function loop(ts){
+  if(gameOver){animId=null;return;}
+  const dt=Math.min(ts-lastTime,50);
+  lastTime=ts;
+  if(deathTimer>0){
+    deathTimer-=dt;
+    if(deathTimer<=0){
+      if(lives<=0){endGame();return;}
+      resetPlayer();
+    }
+    draw(); animId=requestAnimationFrame(loop); return;
+  }
+  update(dt);
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+function update(dt){
+  timeLeft-=dt/1000;
+  if(timeLeft<=0){ die(); return; }
+  document.getElementById('timer').textContent=Math.ceil(timeLeft);
+
+  // Move lanes
+  lanes.forEach(lane=>{
+    lane.objs.forEach(obj=>{
+      obj.x+=lane.dir*lane.spd*(dt/CELL)*CELL/CELL;
+      // Wrap
+      if(lane.dir>0&&obj.x>13) obj.x-=13;
+      if(lane.dir<0&&obj.x+obj.len<0) obj.x+=13;
+    });
+  });
+
+  // Carry player on log
+  if(player.row>=7&&player.row<=11){
+    const lane=lanes.find(l=>l.row===player.row);
+    if(lane){
+      let onLog=false;
+      lane.objs.forEach(obj=>{
+        const ox=obj.x, ox2=obj.x+obj.len;
+        if(player.col+0.5>ox&&player.col+0.5<ox2){
+          onLog=true;
+          player.col+=lane.dir*lane.spd*(dt/CELL)*CELL/CELL;
+        }
+      });
+      if(!onLog){ die(); return; }
+    }
+    // Check bounds after riding
+    if(player.col<0||player.col>=13){ die(); return; }
+  }
+
+  // Road collision
+  if(player.row>=1&&player.row<=5){
+    const lane=lanes.find(l=>l.row===player.row);
+    if(lane){
+      lane.objs.forEach(obj=>{
+        const ox=Math.floor(obj.x), len=obj.len;
+        for(let i=0;i<len;i++){
+          if(player.col===((ox+i+130)%13)){ die(); return; }
+        }
+      });
+    }
+  }
+
+  // Goal row
+  if(player.row===12){
+    const gIdx=Math.floor(player.col/(13/GOAL_COUNT));
+    const clamped=Math.max(0,Math.min(GOAL_COUNT-1,gIdx));
+    if(!goals[clamped]){
+      goals[clamped]=true;
+      score+=50+Math.floor(timeLeft)*2;
+      updateHUD();
+      if(goals.every(g=>g)){
+        level++;
+        goals=Array(GOAL_COUNT).fill(false);
+        lanes=makeLanes().map((l,i)=>({...l,spd:lanes[i]?.spd*1.1||l.spd}));
+        score+=100;
+        updateHUD();
+      }
+    }
+    resetPlayer();
+  }
+}
+
+function die(){
+  if(deathTimer>0) return;
+  lives--; updateHUD();
+  deathTimer=800;
+  player.alive=false;
+}
+
+function endGame(){
+  gameOver=true;
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='SWALLOWED';
+  ov.querySelector('p').innerHTML=`The badlands claimed you.<br/>Score: <strong style="color:#d4b060">${score}</strong>`;
+  ov.querySelector('.overlay-btn').textContent='TRY AGAIN';
+  ov.style.display='flex';
+}
+
+function draw(){
+  ctx.fillStyle='#080808'; ctx.fillRect(0,0,W,H);
+
+  for(let r=0;r<ROWS;r++){
+    const y=(ROWS-1-r)*CELL;
+    if(r===0||r===6){
+      // Safe zones
+      ctx.fillStyle='#1a2a08';
+      ctx.fillRect(0,y,W,CELL);
+      ctx.fillStyle='#3a5a1a';
+      for(let c=0;c<13;c++) ctx.fillRect(c*CELL+2,y+CELL/2-1,CELL-4,2);
+    } else if(r>=1&&r<=5){
+      // Road
+      ctx.fillStyle='#2a1a08';
+      ctx.fillRect(0,y,W,CELL);
+      ctx.fillStyle='#4a3a18';
+      ctx.fillRect(0,y+CELL/2-1,W,2); // lane line
+    } else if(r>=7&&r<=11){
+      // River
+      ctx.fillStyle='#0a1a3a';
+      ctx.fillRect(0,y,W,CELL);
+      // Water shimmer
+      ctx.fillStyle='rgba(30,80,180,0.2)';
+      for(let c=0;c<13;c+=2) ctx.fillRect(c*CELL,y+CELL*0.3,CELL,CELL*0.2);
+    } else if(r===12){
+      // Goals
+      ctx.fillStyle='#0a1a08';
+      ctx.fillRect(0,y,W,CELL);
+      const gw=W/GOAL_COUNT;
+      for(let g=0;g<GOAL_COUNT;g++){
+        ctx.fillStyle=goals[g]?'#3a6a1a':'#1a2a08';
+        ctx.fillRect(g*gw+2,y+2,gw-4,CELL-4);
+        if(!goals[g]){
+          ctx.fillStyle='#3a5a1a';
+          ctx.fillRect(g*gw+gw/2-2,y+CELL/2-4,4,8);
+          ctx.fillRect(g*gw+gw/2-4,y+CELL/2-2,8,4);
+        }
+      }
+    }
+  }
+
+  // Draw lane objects
+  lanes.forEach(lane=>{
+    const y=(ROWS-1-lane.row)*CELL;
+    const isRoad=lane.row<=5;
+    lane.objs.forEach(obj=>{
+      if(isRoad){
+        // Car
+        ctx.fillStyle='#b03010';
+        ctx.fillRect(obj.x*CELL+2,y+3,obj.len*CELL-4,CELL-6);
+        ctx.fillStyle='#d45020';
+        ctx.fillRect(obj.x*CELL+4,y+3,obj.len*CELL-8,4);
+        ctx.fillStyle='#d4b060';
+        ctx.fillRect(obj.x*CELL+2,y+4,3,3);
+        ctx.fillRect((obj.x+obj.len)*CELL-5,y+4,3,3);
+      } else {
+        // Log
+        ctx.fillStyle='#6a3a1a';
+        ctx.fillRect(obj.x*CELL+1,y+4,obj.len*CELL-2,CELL-8);
+        ctx.fillStyle='#8a5a2a';
+        for(let i=0;i<obj.len;i++){
+          ctx.fillRect((obj.x+i)*CELL+4,y+6,CELL-8,CELL-12);
+        }
+      }
+    });
+  });
+
+  // Player
+  const py=(ROWS-1-player.row)*CELL;
+  const px=player.col*CELL;
+  if(player.alive){
+    const flashOn=deathTimer>0&&Math.floor(deathTimer/80)%2===0;
+    if(!flashOn){
+      ctx.fillStyle='#c9a052';
+      ctx.fillRect(px+CELL/2-4,py+CELL/2-6,8,10);
+      ctx.fillRect(px+CELL/2-6,py+CELL/2-2,12,6);
+      ctx.fillStyle='#e8d4a8';
+      ctx.beginPath();
+      ctx.arc(px+CELL/2,py+CELL/2-8,5,0,Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('lives').textContent=lives;
+}
+
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+// Controls — each press = one cell step
+function move(dx,dy){
+  if(inputLock||deathTimer>0||dead||gameOver) return;
+  const nc=player.col+dx, nr=player.row+dy;
+  if(nc<0||nc>=13||nr<0||nr>=ROWS) return;
+  player.col=nc; player.row=nr;
+  if(player.row>0) score+=dy>0?10:0;
+  updateHUD();
+  inputLock=true;
+  setTimeout(()=>inputLock=false,120);
+}
+
+function addDpad(id,dx,dy){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('pressed');move(dx,dy);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();el.classList.remove('pressed');},{passive:false});
+  el.addEventListener('mousedown',()=>move(dx,dy));
+}
+addDpad('btn-up',0,1); addDpad('btn-down',0,-1);
+addDpad('btn-left',-1,0); addDpad('btn-right',1,0);
+
+document.addEventListener('keydown',e=>{
+  switch(e.code){
+    case 'ArrowUp':    move(0,1);  break;
+    case 'ArrowDown':  move(0,-1); break;
+    case 'ArrowLeft':  move(-1,0); break;
+    case 'ArrowRight': move(1,0);  break;
+  }
+});
+
+let tx,ty;
+canvas.addEventListener('touchstart',e=>{e.preventDefault();tx=e.touches[0].clientX;ty=e.touches[0].clientY;},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-tx, dy=e.changedTouches[0].clientY-ty;
+  if(Math.abs(dx)>Math.abs(dy)){if(Math.abs(dx)>15)move(dx>0?1:-1,0);}
+  else{if(Math.abs(dy)>15)move(0,dy>0?-1:1);}
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>

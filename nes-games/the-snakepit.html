@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>The Snakepit — Tiki Blanco Arcade</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #btn-up, #btn-down { opacity: 0.25; pointer-events: none; }
+    #btn-b { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>THE SNAKEPIT</h1>
+  <p>The serpents descend through the mushroom fields.<br/>Shoot fast — they split and multiply.</p>
+  <button class="overlay-btn" id="overlay-btn">DESCEND</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">level</span><span id="level">1</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#444;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">FIRE</button>
+        <span style="font-size:10px;color:#888;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){"use strict";
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let COLS=16, ROWS=20, CELL, animId, lastTime;
+
+const PLAYER_ROWS=4; // bottom rows player can occupy
+const SEG_COUNT=12;
+
+function resize(){
+  const aw=Math.min(window.innerWidth,480);
+  const hudH=document.getElementById('hud').offsetHeight;
+  const padH=document.getElementById('gamepad').offsetHeight;
+  const ah=window.innerHeight-hudH-padH-16;
+  CELL=Math.min(Math.floor(aw/COLS),Math.floor(ah/ROWS));
+  canvas.width=CELL*COLS; canvas.height=CELL*ROWS;
+  draw();
+}
+
+let mushrooms, centipedes, bullets, spider;
+let player, score, lives, level, deathTimer, gameOver;
+let moveTimer, spiderTimer, fleaActive, fleaX, fleaY, fleaTimer;
+const keys={left:false,right:false,fire:false};
+let fireCD=0;
+
+function newGame(){
+  score=0; lives=3; level=1; gameOver=false;
+  startLevel();
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+}
+
+function startLevel(){
+  mushrooms=new Set();
+  // Scatter mushrooms in rows 0 to ROWS-PLAYER_ROWS-1
+  for(let i=0;i<40;i++){
+    const c=Math.floor(Math.random()*COLS);
+    const r=Math.floor(Math.random()*(ROWS-PLAYER_ROWS-1))+1;
+    mushrooms.add(`${c},${r}`);
+  }
+  centipedes=[makeCentipede(SEG_COUNT, 0, 1)];
+  bullets=[];
+  player={x:Math.floor(COLS/2), y:ROWS-1};
+  deathTimer=0; fleaActive=false;
+  moveTimer=Math.max(80,200-level*15);
+  spiderTimer=3000+Math.random()*3000;
+  spider=null; fireCD=0;
+}
+
+function makeCentipede(len, startCol, dir){
+  const segs=[];
+  for(let i=0;i<len;i++) segs.push({x:startCol-i*dir, y:0, dir:dir, row:0});
+  return segs;
+}
+
+function loop(ts){
+  if(gameOver){animId=null;return;}
+  const dt=Math.min(ts-lastTime,50);
+  lastTime=ts;
+  update(dt);
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+let moveAccum=0;
+function update(dt){
+  if(deathTimer>0){
+    deathTimer-=dt;
+    if(deathTimer<=0){
+      if(lives<=0){endGame();return;}
+      player={x:Math.floor(COLS/2),y:ROWS-1};
+    }
+    return;
+  }
+
+  // Player movement
+  fireCD=Math.max(0,fireCD-dt);
+  if(keys.left) player.x=Math.max(0,player.x-(dt*0.008));
+  if(keys.right) player.x=Math.min(COLS-1,player.x+(dt*0.008));
+  if(keys.fire&&fireCD<=0&&bullets.length<2){
+    bullets.push({x:Math.floor(player.x),y:player.y}); fireCD=350;
+  }
+
+  // Move bullets
+  bullets.forEach(b=>b.fy=(b.fy||b.y)-dt*0.012);
+  bullets.forEach(b=>b.y=Math.floor(b.fy||b.y));
+  bullets=bullets.filter(b=>b.y>=0);
+
+  // Bullet vs mushroom
+  bullets.forEach((b,bi)=>{
+    const k=`${b.x},${b.y}`;
+    if(mushrooms.has(k)){ mushrooms.delete(k); score+=1; bullets.splice(bi,1); updateHUD(); }
+  });
+
+  // Bullet vs centipede
+  centipedes.forEach((cent,ci)=>{
+    bullets.forEach((b,bi)=>{
+      const si=cent.findIndex(s=>Math.floor(s.x)===b.x&&s.y===b.y);
+      if(si<0) return;
+      // Place mushroom at hit spot
+      mushrooms.add(`${b.x},${b.y}`);
+      score+=10; updateHUD();
+      bullets.splice(bi,1);
+      // Split
+      const tail=cent.splice(si+1);
+      cent.splice(si,1);
+      if(cent.length>0) centipedes.push(cent);
+      if(tail.length>0) centipedes.push(tail);
+      centipedes.splice(ci,1);
+    });
+  });
+
+  // Centipede movement
+  moveAccum+=dt;
+  while(moveAccum>=moveTimer){
+    moveAccum-=moveTimer;
+    centipedes.forEach(cent=>{
+      cent.forEach(seg=>{
+        const nx=seg.x+seg.dir;
+        const ny=seg.y;
+        const blocked=nx<0||nx>=COLS||mushrooms.has(`${Math.floor(nx)},${ny}`);
+        if(blocked){
+          seg.dir*=-1;
+          seg.y=Math.min(ROWS-1,seg.y+1);
+        } else {
+          seg.x=nx;
+        }
+      });
+    });
+
+    // Centipede reaches player zone — check collision
+    centipedes.forEach(cent=>{
+      cent.forEach(seg=>{
+        if(seg.y>=ROWS-PLAYER_ROWS&&Math.abs(Math.floor(seg.x)-Math.floor(player.x))<1&&seg.y===Math.floor(player.y)){
+          die();
+        }
+      });
+    });
+
+    // Centipede fully past bottom → reset to top
+    centipedes.forEach((cent,ci)=>{
+      if(cent.every(s=>s.y>=ROWS)){
+        cent.forEach((s,i)=>{s.x=i; s.y=0; s.dir=1;});
+      }
+    });
+  }
+
+  // Remove empty centipedes
+  centipedes=centipedes.filter(c=>c.length>0);
+
+  // Check wave clear
+  if(centipedes.length===0&&centipedes.flat().length===0){
+    level++; updateHUD();
+    setTimeout(()=>startLevel(),500);
+  }
+
+  // Spider
+  spiderTimer-=dt;
+  if(spiderTimer<=0&&!spider){
+    spiderTimer=4000+Math.random()*4000;
+    spider={x:Math.random()<0.5?-1:COLS, y:ROWS-PLAYER_ROWS+Math.floor(Math.random()*PLAYER_ROWS), vx:0, vy:0, timer:0};
+    spider.vx=spider.x<0?0.004:-0.004;
+  }
+  if(spider){
+    spider.timer+=dt;
+    spider.x+=spider.vx*dt;
+    if(spider.timer>500){
+      spider.timer=0;
+      spider.vy=(Math.random()-0.5)*0.003;
+    }
+    spider.y=Math.max(ROWS-PLAYER_ROWS,Math.min(ROWS-1,spider.y+spider.vy*dt));
+    if(spider.x<-2||spider.x>COLS+2) spider=null;
+    // Spider eats mushrooms nearby
+    if(spider){
+      const sk=`${Math.floor(spider.x)},${Math.floor(spider.y)}`;
+      if(mushrooms.has(sk)) mushrooms.delete(sk);
+    }
+    // Spider vs bullet
+    if(spider){
+      bullets.forEach((b,bi)=>{
+        if(Math.abs(b.x-spider.x)<1.5&&Math.abs(b.y-spider.y)<1.5){
+          score+=300; updateHUD();
+          bullets.splice(bi,1); spider=null;
+        }
+      });
+    }
+    // Spider vs player
+    if(spider&&Math.abs(spider.x-player.x)<1&&Math.abs(spider.y-player.y)<1) die();
+  }
+
+  // Flea
+  fleaTimer=(fleaTimer||0)-dt;
+  if(fleaTimer<=0&&!fleaActive&&mushrooms.size<10){
+    fleaActive=true; fleaX=Math.floor(Math.random()*COLS); fleaY=0;
+    fleaTimer=3000+Math.random()*3000;
+  }
+  if(fleaActive){
+    fleaY+=dt*0.006;
+    if(Math.random()<0.03) mushrooms.add(`${fleaX},${Math.floor(fleaY)}`);
+    if(fleaY>=ROWS) fleaActive=false;
+    // Flea vs bullet
+    bullets.forEach((b,bi)=>{
+      if(b.x===fleaX&&Math.abs(b.y-Math.floor(fleaY))<1){
+        score+=200; updateHUD();
+        bullets.splice(bi,1); fleaActive=false;
+      }
+    });
+  }
+}
+
+function die(){
+  if(deathTimer>0) return;
+  lives--; updateHUD();
+  deathTimer=900;
+}
+
+function endGame(){
+  gameOver=true;
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='THE PIT CLAIMS YOU';
+  ov.querySelector('p').innerHTML=`Level ${level} · Score: <strong style="color:#d4b060">${score}</strong>`;
+  ov.querySelector('.overlay-btn').textContent='DESCEND AGAIN';
+  ov.style.display='flex';
+}
+
+function draw(){
+  ctx.fillStyle='#080808'; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Player zone line
+  ctx.fillStyle='#2a1a00';
+  ctx.fillRect(0,(ROWS-PLAYER_ROWS)*CELL,canvas.width,1);
+
+  // Mushrooms
+  mushrooms.forEach(k=>{
+    const [c,r]=k.split(',').map(Number);
+    ctx.fillStyle='#7a2200';
+    ctx.fillRect(c*CELL+2,r*CELL+2,CELL-4,CELL-4);
+    ctx.fillStyle='#b03010';
+    ctx.fillRect(c*CELL+3,r*CELL+2,CELL-6,4);
+    ctx.fillStyle='rgba(255,255,255,0.1)';
+    ctx.fillRect(c*CELL+3,r*CELL+2,CELL-6,2);
+  });
+
+  // Centipedes
+  centipedes.forEach(cent=>{
+    cent.forEach((seg,i)=>{
+      const x=Math.floor(seg.x)*CELL, y=seg.y*CELL;
+      const isHead=i===cent.length-1;
+      ctx.fillStyle=isHead?'#d4b060':'#3a6a1a';
+      ctx.fillRect(x+1,y+1,CELL-2,CELL-2);
+      ctx.fillStyle='rgba(255,255,255,0.15)';
+      ctx.fillRect(x+1,y+1,CELL-2,3);
+      if(isHead){
+        ctx.fillStyle='#080808';
+        ctx.fillRect(x+2,y+3,2,2);
+        ctx.fillRect(x+CELL-4,y+3,2,2);
+      }
+    });
+  });
+
+  // Flea
+  if(fleaActive){
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(fleaX*CELL+3,fleaY*CELL+2,CELL-6,CELL-4);
+    ctx.fillStyle='#080808';
+    ctx.fillRect(fleaX*CELL+3,fleaY*CELL+3,2,2);
+    ctx.fillRect(fleaX*CELL+CELL-5,fleaY*CELL+3,2,2);
+  }
+
+  // Spider
+  if(spider){
+    ctx.fillStyle='#8b2200';
+    const sx=Math.floor(spider.x)*CELL, sy=Math.floor(spider.y)*CELL;
+    ctx.fillRect(sx+2,sy+2,CELL-4,CELL-4);
+    ctx.strokeStyle='#c03010'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(sx,sy+CELL/2); ctx.lineTo(sx+3,sy+CELL/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx+CELL,sy+CELL/2); ctx.lineTo(sx+CELL-3,sy+CELL/2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx+2,sy+3); ctx.lineTo(sx+CELL-2,sy+3); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(sx+2,sy+CELL-3); ctx.lineTo(sx+CELL-2,sy+CELL-3); ctx.stroke();
+  }
+
+  // Bullets
+  ctx.fillStyle='#c9a052';
+  bullets.forEach(b=>ctx.fillRect(b.x*CELL+CELL/2-1,(b.fy||b.y)*CELL,2,8));
+
+  // Player
+  if(deathTimer<=0||Math.floor(deathTimer/80)%2===0){
+    const px=Math.floor(player.x)*CELL, py=player.y*CELL;
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(px+2,py+4,CELL-4,CELL-4);
+    ctx.fillRect(px+CELL/2-2,py,4,5);
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    ctx.fillRect(px+2,py+4,CELL-4,3);
+  }
+
+  // Lives pips
+  for(let i=0;i<lives;i++){
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(4+i*14,canvas.height-6,10,4);
+    ctx.fillRect(4+i*14+3,canvas.height-10,4,5);
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('level').textContent=level;
+  document.getElementById('lives').textContent=lives;
+}
+
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+function addHoldBtn(id,fn){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('pressed');fn(true);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();el.classList.remove('pressed');fn(false);},{passive:false});
+  el.addEventListener('mousedown',()=>fn(true));
+  el.addEventListener('mouseup',()=>fn(false));
+}
+addHoldBtn('btn-left',v=>keys.left=v);
+addHoldBtn('btn-right',v=>keys.right=v);
+addHoldBtn('btn-a',v=>keys.fire=v);
+
+document.addEventListener('keydown',e=>{
+  if(e.code==='ArrowLeft') keys.left=true;
+  if(e.code==='ArrowRight') keys.right=true;
+  if(e.code==='Space'||e.code==='KeyZ') keys.fire=true;
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft') keys.left=false;
+  if(e.code==='ArrowRight') keys.right=false;
+  if(e.code==='Space'||e.code==='KeyZ') keys.fire=false;
+});
+
+let tx;
+canvas.addEventListener('touchstart',e=>{e.preventDefault();tx=e.touches[0].clientX;},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-tx;
+  if(Math.abs(dx)<15){keys.fire=true;setTimeout(()=>keys.fire=false,300);}
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>

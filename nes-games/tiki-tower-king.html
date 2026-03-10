@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>Tiki Tower King — Tiki Blanco Arcade</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #btn-b { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>TIKI TOWER KING</h1>
+  <p>The spirit ape hurls fire from the summit.<br/>Climb the tower. Reach the top. Claim your crown.</p>
+  <button class="overlay-btn" id="overlay-btn">BEGIN THE CLIMB</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">stage</span><span id="stage">1</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#444;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">JUMP</button>
+        <span style="font-size:10px;color:#888;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){"use strict";
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let W,H,animId,lastTime,scale;
+
+function resize(){
+  const aw=Math.min(window.innerWidth,480);
+  const hudH=document.getElementById('hud').offsetHeight;
+  const padH=document.getElementById('gamepad').offsetHeight;
+  const ah=window.innerHeight-hudH-padH-16;
+  scale=Math.min(aw/320,ah/380);
+  W=Math.floor(320*scale); H=Math.floor(380*scale);
+  canvas.width=W; canvas.height=H;
+  buildLayout();
+  draw();
+}
+
+// Base layout in 320×380 units, scaled
+// 4 platforms + ladders
+let platforms, ladders, kongPos;
+
+function buildLayout(){
+  const s=scale;
+  platforms=[
+    {x:0,  y:H-20,  w:W,    h:8, dir:0},  // P1 bottom
+    {x:20, y:H-110, w:W-20, h:8, dir:1},  // P2
+    {x:0,  y:H-200, w:W-20, h:8, dir:-1}, // P3
+    {x:20, y:H-290, w:W-30, h:8, dir:1},  // P4 (top)
+  ];
+  ladders=[
+    {x:W*0.75, y:H-110, h:90},   // P1->P2
+    {x:W*0.2,  y:H-200, h:90},   // P2->P3
+    {x:W*0.75, y:H-290, h:90},   // P3->P4
+  ];
+  kongPos={x:30, y:H-318};
+}
+
+let player, barrels, score, lives, stage, dead, deathTimer, gameOver;
+let barrelTimer, barrelSpeed, won, wonTimer;
+const keys={left:false,right:false,up:false,jump:false};
+const GRAVITY=0.018;
+const JUMP_VY=-0.55;
+const MOVE_SPD=0.12;
+const BARREL_RADIUS=10;
+const PLAYER_W=14,PLAYER_H=20;
+
+function newGame(){
+  score=0; lives=3; stage=1; gameOver=false; won=false;
+  startStage();
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+}
+
+function startStage(){
+  player={
+    x:20, y:H-40,
+    vx:0, vy:0,
+    onGround:true, onLadder:false,
+    facing:1
+  };
+  barrels=[]; dead=false; deathTimer=0; won=false; wonTimer=0;
+  barrelTimer=Math.max(1500,3000-stage*200);
+  barrelSpeed=Math.min(0.25,0.10+stage*0.02);
+}
+
+function loop(ts){
+  if(gameOver){animId=null;return;}
+  const dt=Math.min(ts-lastTime,50);
+  lastTime=ts;
+  update(dt);
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+function update(dt){
+  if(deathTimer>0){
+    deathTimer-=dt;
+    if(deathTimer<=0){
+      if(lives<=0){endGame();return;}
+      startStage();
+    }
+    return;
+  }
+
+  if(won){
+    wonTimer-=dt;
+    if(wonTimer<=0){ stage++; updateHUD(); startStage(); }
+    return;
+  }
+
+  // Player physics
+  if(!player.onLadder){
+    player.vy+=GRAVITY*dt;
+  }
+
+  // Horizontal movement
+  player.vx=0;
+  if(keys.left){ player.vx=-MOVE_SPD; player.facing=-1; }
+  if(keys.right){ player.vx=MOVE_SPD; player.facing=1; }
+
+  // Ladder detection
+  const onLadder=ladders.some(l=>
+    player.x+PLAYER_W/2>l.x&&player.x+PLAYER_W/2<l.x+14&&
+    player.y+PLAYER_H>l.y&&player.y<l.y+l.h
+  );
+
+  if(onLadder&&(keys.up||player.onLadder)){
+    player.onLadder=true;
+    player.vy=keys.up?-0.18:keys.left||keys.right?0:0.05;
+    player.vx=0;
+  } else if(!onLadder){
+    player.onLadder=false;
+  }
+
+  // Jump
+  if(keys.jump&&player.onGround&&!player.onLadder){
+    player.vy=JUMP_VY*scale*0.8;
+    player.onGround=false;
+    keys.jump=false;
+  }
+
+  player.x+=player.vx*dt;
+  player.y+=player.vy*dt;
+
+  // Clamp horizontal
+  player.x=Math.max(0,Math.min(W-PLAYER_W,player.x));
+
+  // Platform collision
+  player.onGround=false;
+  platforms.forEach(p=>{
+    // Landing on top
+    if(player.x+PLAYER_W>p.x&&player.x<p.x+p.w){
+      if(player.y+PLAYER_H>=p.y&&player.y+PLAYER_H<=p.y+p.h+Math.abs(player.vy*dt)+2&&player.vy>=0){
+        player.y=p.y-PLAYER_H;
+        player.vy=0;
+        player.onGround=true;
+        player.onLadder=false;
+      }
+    }
+  });
+
+  // Fall off bottom
+  if(player.y>H){ die(); return; }
+
+  // Win: player reaches top platform
+  const topP=platforms[3];
+  if(player.y+PLAYER_H<=topP.y+10&&player.x>topP.x&&player.x<topP.x+topP.w-20){
+    won=true; wonTimer=1500;
+    score+=500; updateHUD();
+  }
+
+  // Barrels
+  barrelTimer-=dt;
+  if(barrelTimer<=0){
+    barrelTimer=Math.max(1000,2500-stage*150)+Math.random()*500;
+    barrels.push({x:kongPos.x+30,y:kongPos.y,vx:barrelSpeed,vy:0,onGround:false});
+  }
+
+  barrels.forEach((b,bi)=>{
+    b.vy+=GRAVITY*dt;
+    b.x+=b.vx*dt; b.y+=b.vy*dt;
+
+    b.onGround=false;
+    platforms.forEach(p=>{
+      if(b.x+BARREL_RADIUS>p.x&&b.x-BARREL_RADIUS<p.x+p.w){
+        if(b.y+BARREL_RADIUS>=p.y&&b.y+BARREL_RADIUS<=p.y+BARREL_RADIUS+Math.abs(b.vy*dt)+2&&b.vy>=0){
+          b.y=p.y-BARREL_RADIUS;
+          b.vy=0; b.onGround=true;
+          // Bounce direction at edges
+          if(b.x>p.x+p.w-20) b.vx=-barrelSpeed;
+          if(b.x<p.x+20) b.vx=barrelSpeed;
+        }
+      }
+    });
+
+    // Barrel falls off screen
+    if(b.y>H){ barrels.splice(bi,1); score+=10; updateHUD(); return; }
+
+    // Barrel vs player
+    const dx=b.x-(player.x+PLAYER_W/2);
+    const dy=b.y-(player.y+PLAYER_H/2);
+    if(Math.sqrt(dx*dx+dy*dy)<BARREL_RADIUS+PLAYER_W/2-2) die();
+
+    // Player jumps over barrel — score
+    if(player.vy<0&&Math.abs(dx)<BARREL_RADIUS+10&&player.y+PLAYER_H<b.y){
+      score+=100; updateHUD();
+    }
+  });
+}
+
+function die(){
+  if(deathTimer>0) return;
+  lives--; updateHUD();
+  deathTimer=900;
+}
+
+function endGame(){
+  gameOver=true;
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='THE APE REIGNS';
+  ov.querySelector('p').innerHTML=`Stage ${stage} · Score: <strong style="color:#d4b060">${score}</strong>`;
+  ov.querySelector('.overlay-btn').textContent='CLIMB AGAIN';
+  ov.style.display='flex';
+}
+
+function draw(){
+  ctx.fillStyle='#080808'; ctx.fillRect(0,0,W,H);
+
+  // Platforms (with NES-style girder look)
+  platforms.forEach((p,pi)=>{
+    ctx.fillStyle='#5a3010';
+    ctx.fillRect(p.x,p.y,p.w,p.h);
+    ctx.fillStyle='#7a4a20';
+    ctx.fillRect(p.x,p.y,p.w,3);
+    // Girder segments
+    ctx.fillStyle='#4a2008';
+    for(let gx=p.x;gx<p.x+p.w;gx+=16){
+      ctx.fillRect(gx,p.y,1,p.h);
+    }
+  });
+
+  // Ladders
+  ladders.forEach(l=>{
+    ctx.fillStyle='#3a2010';
+    ctx.fillRect(l.x,l.y,14,l.h);
+    ctx.fillStyle='#6a4a20';
+    ctx.fillRect(l.x,l.y,3,l.h);
+    ctx.fillRect(l.x+11,l.y,3,l.h);
+    for(let ly=l.y;ly<l.y+l.h;ly+=10){
+      ctx.fillStyle='#5a3a18';
+      ctx.fillRect(l.x,ly,14,2);
+    }
+  });
+
+  // Kong (spirit ape) at top left
+  ctx.fillStyle='#3a1a00';
+  const kx=kongPos.x, ky=kongPos.y;
+  ctx.fillRect(kx,ky,36,30);   // body
+  ctx.fillStyle='#5a2a08';
+  ctx.fillRect(kx+4,ky-14,28,18); // head
+  ctx.fillStyle='#e8c080';
+  ctx.fillRect(kx+10,ky-10,16,10); // face
+  ctx.fillStyle='#080808';
+  ctx.fillRect(kx+13,ky-8,4,4);   // eyes
+  ctx.fillRect(kx+20,ky-8,4,4);
+  ctx.fillStyle='#3a1a00';
+  ctx.fillRect(kx-8,ky+4,10,20); // left arm
+  ctx.fillRect(kx+34,ky+4,10,20); // right arm
+
+  // Barrels
+  barrels.forEach(b=>{
+    const bx=Math.floor(b.x), by=Math.floor(b.y);
+    ctx.fillStyle='#8b2200';
+    ctx.beginPath(); ctx.arc(bx,by,BARREL_RADIUS,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#c03010';
+    ctx.beginPath(); ctx.arc(bx,by,BARREL_RADIUS-3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#8b2200';
+    ctx.fillRect(bx-BARREL_RADIUS+1,by-2,BARREL_RADIUS*2-2,4);
+    ctx.fillRect(bx-2,by-BARREL_RADIUS+1,4,BARREL_RADIUS*2-2);
+  });
+
+  // Player
+  if(deathTimer<=0||Math.floor(deathTimer/80)%2===0){
+    const px=Math.floor(player.x), py=Math.floor(player.y);
+    const f=player.facing;
+    // Legs
+    ctx.fillStyle='#6a4a1a';
+    ctx.fillRect(px+2,py+PLAYER_H-6,5,6);
+    ctx.fillRect(px+PLAYER_W-7,py+PLAYER_H-6,5,6);
+    // Body
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(px,py+6,PLAYER_W,PLAYER_H-6);
+    // Arms
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(px-3,py+8,5,8);
+    ctx.fillRect(px+PLAYER_W-2,py+8,5,8);
+    // Head
+    ctx.fillStyle='#e8c080';
+    ctx.fillRect(px+1,py,PLAYER_W-2,8);
+    // Hat
+    ctx.fillStyle='#8b2200';
+    ctx.fillRect(px,py-4,PLAYER_W,5);
+    ctx.fillRect(px+2,py-8,PLAYER_W-4,5);
+  }
+
+  // Win flash
+  if(won){
+    ctx.fillStyle='rgba(201,160,82,0.15)';
+    ctx.fillRect(0,0,W,H);
+    ctx.fillStyle='#d4b060';
+    ctx.font=`bold ${Math.floor(18*scale)}px 'Cinzel',serif`;
+    ctx.textAlign='center';
+    ctx.fillText('SUMMIT REACHED!',W/2,H/2);
+  }
+
+  // Lives
+  for(let i=0;i<lives;i++){
+    const lx=4+i*16, ly=H-6;
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(lx,ly,12,4);
+    ctx.fillRect(lx+2,ly-4,8,4);
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('stage').textContent=stage;
+  document.getElementById('lives').textContent=lives;
+}
+
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+function addHold(id,fn){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('pressed');fn(true);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();el.classList.remove('pressed');fn(false);},{passive:false});
+  el.addEventListener('mousedown',()=>fn(true));
+  el.addEventListener('mouseup',()=>fn(false));
+}
+addHold('btn-left',v=>keys.left=v);
+addHold('btn-right',v=>keys.right=v);
+addHold('btn-up',v=>keys.up=v);
+addHold('btn-down',v=>keys.up=false);
+
+document.getElementById('btn-a').addEventListener('touchstart',e=>{
+  e.preventDefault(); document.getElementById('btn-a').classList.add('pressed');
+  keys.jump=true;
+},{passive:false});
+document.getElementById('btn-a').addEventListener('touchend',e=>{
+  e.preventDefault(); document.getElementById('btn-a').classList.remove('pressed');
+},{passive:false});
+document.getElementById('btn-a').addEventListener('mousedown',()=>keys.jump=true);
+
+document.addEventListener('keydown',e=>{
+  if(e.code==='ArrowLeft')  keys.left=true;
+  if(e.code==='ArrowRight') keys.right=true;
+  if(e.code==='ArrowUp')    keys.up=true;
+  if(e.code==='Space'||e.code==='KeyZ') keys.jump=true;
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft')  keys.left=false;
+  if(e.code==='ArrowRight') keys.right=false;
+  if(e.code==='ArrowUp')    keys.up=false;
+  if(e.code==='Space'||e.code==='KeyZ') keys.jump=false;
+});
+
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>Sky Sightings — Tiki Blanco Arcade</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #btn-up, #btn-down { opacity: 0.25; pointer-events: none; }
+    #btn-b { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>SKY SIGHTINGS</h1>
+  <p>They descend from beyond the veil.<br/>Hold the line. Fire when ready.</p>
+  <button class="overlay-btn" id="overlay-btn">OPEN FIRE</button>
+  <a href="index.html" style="color:#6a4a10;font-size:12px;text-decoration:none;font-family:'Lora',serif;font-style:italic;">← back to arcade</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">wave</span><span id="wave">1</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#444;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">FIRE</button>
+        <span style="font-size:10px;color:#888;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){"use strict";
+const canvas=document.getElementById('canvas');
+const ctx=canvas.getContext('2d');
+let W,H,animId,lastTime;
+
+// Layout constants (set in resize)
+let CELL, PLAYER_Y, SHIELD_Y;
+const INV_COLS=11, INV_ROWS=5;
+
+function resize(){
+  const aw=Math.min(window.innerWidth,480);
+  const hudH=document.getElementById('hud').offsetHeight;
+  const padH=document.getElementById('gamepad').offsetHeight;
+  const ah=window.innerHeight-hudH-padH-16;
+  W=aw; H=ah;
+  canvas.width=W; canvas.height=H;
+  CELL=Math.floor(W/(INV_COLS+2));
+  PLAYER_Y=H-20;
+  SHIELD_Y=H-60;
+  if(!dead&&!gameOver) draw();
+}
+
+// Game state
+let invaders, bullets, eBullets, player, shields;
+let score, wave, lives, dead, gameOver;
+let invDirX, invSpeed, invDropping, invDropCount;
+let fireCD, eMoveTimer, eFireTimer, mysteryX, mysteryDir, mysteryTimer;
+let flashTimer=0;
+
+const PTS=[30,20,20,10,10];
+
+function newGame(){
+  score=0; wave=1; lives=3; dead=false; gameOver=false;
+  player={x:W/2, w:CELL*1.2, spd:W*0.006};
+  startWave();
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  lastTime=performance.now();
+  animId=requestAnimationFrame(loop);
+}
+
+function startWave(){
+  invaders=[];
+  const startX=(W-(INV_COLS*CELL*1.5))/2;
+  for(let r=0;r<INV_ROWS;r++){
+    for(let c=0;c<INV_COLS;c++){
+      invaders.push({x:startX+c*CELL*1.5, y:30+r*CELL*1.4, row:r, alive:true, animFrame:0});
+    }
+  }
+  bullets=[]; eBullets=[];
+  shields=[];
+  const sw=CELL*3, sh=CELL*1.5, gap=(W-4*sw)/5;
+  for(let i=0;i<4;i++){
+    const sx=gap+(gap+sw)*i;
+    const segs=[];
+    // 3x2 grid of shield blocks
+    for(let br=0;br<3;br++) for(let bc=0;bc<6;bc++) segs.push({x:sx+bc*(sw/6),y:SHIELD_Y+br*(sh/3),alive:true,w:sw/6,h:sh/3});
+    shields.push(...segs);
+  }
+  invDirX=1; invSpeed=Math.max(200,600-wave*60);
+  invDropping=false; invDropCount=0;
+  fireCD=0; eMoveTimer=invSpeed; eFireTimer=1500;
+  mysteryX=-1; mysteryDir=1; mysteryTimer=15000;
+}
+
+function loop(ts){
+  if(gameOver){animId=null;return;}
+  const dt=Math.min(ts-lastTime,50);
+  lastTime=ts;
+  if(!dead) update(dt);
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+function update(dt){
+  flashTimer=Math.max(0,flashTimer-dt);
+
+  // Player movement
+  if(keys.left) player.x=Math.max(player.w/2, player.x-player.spd*dt);
+  if(keys.right) player.x=Math.min(W-player.w/2, player.x+player.spd*dt);
+
+  // Player fire
+  fireCD=Math.max(0,fireCD-dt);
+  if(keys.fire&&fireCD<=0&&bullets.length<3){
+    bullets.push({x:player.x,y:PLAYER_Y-20,vy:-0.5}); fireCD=400;
+  }
+
+  // Move bullets
+  bullets.forEach(b=>b.y+=b.vy*dt);
+  bullets=bullets.filter(b=>b.y>0);
+  eBullets.forEach(b=>b.y+=b.vy*dt);
+  eBullets=eBullets.filter(b=>b.y<H+10);
+
+  // Invader movement
+  eMoveTimer-=dt;
+  if(eMoveTimer<=0){
+    eMoveTimer=invSpeed;
+    const alive=invaders.filter(i=>i.alive);
+    if(!alive.length){wave++;startWave();return;}
+    let hitEdge=false;
+    alive.forEach(i=>{i.x+=invDirX*CELL*0.5; i.animFrame^=1;});
+    const minX=Math.min(...alive.map(i=>i.x));
+    const maxX=Math.max(...alive.map(i=>i.x));
+    if(maxX>W-CELL||minX<CELL){ hitEdge=true; invDirX*=-1; alive.forEach(i=>i.y+=CELL*0.6); }
+    // Check if invaders reached bottom
+    if(alive.some(i=>i.y>PLAYER_Y-30)){
+      lives=0; updateHUD(); endGame(); return;
+    }
+  }
+
+  // Enemy fire
+  eFireTimer-=dt;
+  if(eFireTimer<=0){
+    eFireTimer=Math.max(600,1500-wave*80);
+    const alive=invaders.filter(i=>i.alive);
+    if(alive.length){
+      // Pick bottom-most invader in a random column
+      const col=Math.floor(Math.random()*INV_COLS);
+      const colInvs=alive.filter(i=>(i.x-(W-(INV_COLS*CELL*1.5))/2)>col*CELL*1.4-CELL&&(i.x-(W-(INV_COLS*CELL*1.5))/2)<(col+1)*CELL*1.5);
+      const shooter=colInvs.reduce((a,b)=>b.y>a.y?b:a, colInvs[0]||alive[Math.floor(Math.random()*alive.length)]);
+      if(shooter) eBullets.push({x:shooter.x,y:shooter.y+CELL*0.7,vy:0.3+wave*0.02});
+    }
+  }
+
+  // Mystery ship
+  mysteryTimer-=dt;
+  if(mysteryTimer<=0){
+    mysteryTimer=15000+Math.random()*10000;
+    mysteryX=mysteryDir>0?-CELL:W+CELL;
+  }
+  if(mysteryX>-1){
+    mysteryX+=mysteryDir*0.15*dt;
+    if(mysteryX<-CELL*2||mysteryX>W+CELL*2) mysteryX=-1;
+  }
+
+  // Bullet vs invader
+  bullets.forEach((b,bi)=>{
+    invaders.forEach(inv=>{
+      if(!inv.alive) return;
+      if(b.x>inv.x-CELL*0.6&&b.x<inv.x+CELL*0.6&&b.y>inv.y-CELL*0.5&&b.y<inv.y+CELL*0.5){
+        inv.alive=false; score+=PTS[inv.row]*(1+Math.floor(wave/3));
+        bullets.splice(bi,1); flashTimer=80; updateHUD();
+      }
+    });
+    // vs mystery
+    if(mysteryX>-1&&b.x>mysteryX-CELL&&b.x<mysteryX+CELL&&b.y<30){
+      score+=100+Math.floor(Math.random()*5)*50;
+      mysteryX=-1; bullets.splice(bi,1); updateHUD();
+    }
+    // vs shields
+    shields.forEach((s,si)=>{
+      if(!s.alive) return;
+      if(b.x>s.x&&b.x<s.x+s.w&&b.y>s.y&&b.y<s.y+s.h){
+        s.alive=false; bullets.splice(bi,1);
+      }
+    });
+  });
+
+  // Enemy bullets vs player
+  eBullets.forEach((b,bi)=>{
+    if(Math.abs(b.x-player.x)<player.w/2&&b.y>PLAYER_Y-24&&b.y<PLAYER_Y+8){
+      eBullets.splice(bi,1); lives--;
+      updateHUD();
+      if(lives<=0){endGame();return;}
+      flashTimer=500;
+    }
+    shields.forEach((s,si)=>{
+      if(!s.alive) return;
+      if(b.x>s.x&&b.x<s.x+s.w&&b.y>s.y&&b.y<s.y+s.h){
+        s.alive=false; eBullets.splice(bi,1);
+      }
+    });
+  });
+}
+
+function draw(){
+  ctx.fillStyle='#080808'; ctx.fillRect(0,0,W,H);
+
+  // Starfield
+  ctx.fillStyle='rgba(201,160,82,0.15)';
+  for(let i=0;i<40;i++){
+    const sx=((i*137+score*0.01)%1)*W;
+    const sy=((i*89)%1)*H;
+    ctx.fillRect(Math.floor(sx),Math.floor(sy),1,1);
+  }
+
+  if(dead||gameOver){
+    ctx.fillStyle='rgba(176,48,16,0.4)';
+    ctx.fillRect(0,PLAYER_Y-12,W,24);
+    return;
+  }
+
+  // Ground line
+  ctx.fillStyle='#3a1a00';
+  ctx.fillRect(0,H-8,W,8);
+
+  // Mystery ship
+  if(mysteryX>-1){
+    ctx.fillStyle='#c03010';
+    ctx.fillRect(mysteryX-CELL*0.8,8,CELL*1.6,CELL*0.6);
+    ctx.fillStyle='#e05020';
+    ctx.fillRect(mysteryX-CELL*0.4,4,CELL*0.8,CELL*0.5);
+  }
+
+  // Invaders
+  invaders.forEach(inv=>{
+    if(!inv.alive) return;
+    const x=inv.x, y=inv.y, r=inv.row, f=inv.animFrame;
+    ctx.fillStyle=r<1?'#d4b060':r<3?'#b03010':'#7a6a3a';
+    const iw=CELL*0.9, ih=CELL*0.7;
+    ctx.fillRect(x-iw/2,y-ih/2,iw,ih);
+    ctx.fillStyle='rgba(0,0,0,0.4)';
+    // Eyes
+    ctx.fillRect(x-iw/4+(f?2:0),y-ih/4,iw/6,ih/4);
+    ctx.fillRect(x+iw/8-(f?2:0),y-ih/4,iw/6,ih/4);
+    // Legs
+    ctx.fillStyle=r<1?'#d4b060':r<3?'#b03010':'#7a6a3a';
+    if(f===0){
+      ctx.fillRect(x-iw/2-3,y+ih/4,4,4);
+      ctx.fillRect(x+iw/2-1,y+ih/4,4,4);
+    } else {
+      ctx.fillRect(x-iw/4,y+ih/2,4,4);
+      ctx.fillRect(x+iw/4-4,y+ih/2,4,4);
+    }
+  });
+
+  // Shields
+  shields.forEach(s=>{
+    if(!s.alive) return;
+    ctx.fillStyle='#3a5a1a';
+    ctx.fillRect(s.x,s.y,s.w-1,s.h-1);
+  });
+
+  // Player (cannon)
+  const px=player.x, pw=player.w;
+  const flashOn=flashTimer>0&&Math.floor(flashTimer/50)%2===0;
+  ctx.fillStyle=flashOn?'#e05020':'#c9a052';
+  ctx.fillRect(px-pw/2,PLAYER_Y-10,pw,14);
+  ctx.fillRect(px-pw*0.15,PLAYER_Y-22,pw*0.3,14);
+
+  // Player bullets
+  ctx.fillStyle='#d4b060';
+  bullets.forEach(b=>ctx.fillRect(b.x-1,b.y-6,2,10));
+
+  // Enemy bullets
+  ctx.fillStyle='#c03010';
+  eBullets.forEach(b=>{
+    ctx.fillRect(b.x-2,b.y,2,6);
+    ctx.fillRect(b.x,b.y+3,2,6);
+  });
+
+  // Lives pips
+  for(let i=0;i<lives;i++){
+    ctx.fillStyle='#c9a052';
+    ctx.fillRect(8+i*18,H-6,12,4);
+    ctx.fillRect(8+i*18+4,H-10,4,5);
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('wave').textContent=wave;
+  document.getElementById('lives').textContent=lives;
+}
+
+function endGame(){
+  dead=true; gameOver=true;
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='THEY HAVE LANDED';
+  ov.querySelector('p').innerHTML=`Wave ${wave} · Score: <strong style="color:#d4b060">${score}</strong>`;
+  ov.querySelector('.overlay-btn').textContent='DEFEND AGAIN';
+  ov.style.display='flex';
+}
+
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+// Controls
+const keys={left:false,right:false,fire:false};
+let fireHold=false;
+
+function addBtn(id,fn){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{e.preventDefault();el.classList.add('pressed');fn(true);},{passive:false});
+  el.addEventListener('touchend',e=>{e.preventDefault();el.classList.remove('pressed');fn(false);},{passive:false});
+  el.addEventListener('mousedown',()=>fn(true));
+  el.addEventListener('mouseup',()=>fn(false));
+}
+
+addBtn('btn-left',v=>keys.left=v);
+addBtn('btn-right',v=>keys.right=v);
+addBtn('btn-a',v=>keys.fire=v);
+
+document.addEventListener('keydown',e=>{
+  if(e.code==='ArrowLeft') keys.left=true;
+  if(e.code==='ArrowRight') keys.right=true;
+  if(e.code==='Space'||e.code==='KeyZ') keys.fire=true;
+});
+document.addEventListener('keyup',e=>{
+  if(e.code==='ArrowLeft') keys.left=false;
+  if(e.code==='ArrowRight') keys.right=false;
+  if(e.code==='Space'||e.code==='KeyZ') keys.fire=false;
+});
+
+// Swipe to move, tap to fire
+let tx;
+canvas.addEventListener('touchstart',e=>{e.preventDefault();tx=e.touches[0].clientX;},{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-tx;
+  if(Math.abs(dx)<15){ keys.fire=true; setTimeout(()=>keys.fire=false,200); }
+},{passive:false});
+
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>
