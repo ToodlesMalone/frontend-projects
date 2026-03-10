@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>PAC-MAN — NES Games</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #game-wrap { gap: 0; }
+    #gamepad { flex-direction: row; }
+    #action-btns { visibility: hidden; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>PAC-MAN</h1>
+  <p>Eat all dots &amp; power pellets.<br/>Avoid the ghosts!</p>
+  <button class="overlay-btn" id="overlay-btn">START GAME</button>
+  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">level</span><span id="level">1</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <button class="action-btn" id="btn-b">B</button>
+      <button class="action-btn" id="btn-a">A</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ── Map definition (28×31 NES-style maze) ──────────
+// 0=dot, 1=wall, 2=empty, 3=power pellet, 4=ghost house door
+const T=1,E=2,D=3,H=4;
+const MAP_TEMPLATE = [
+  [T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T],
+  [T,0,0,0,0,0,0,0,0,0,0,0,0,T,T,0,0,0,0,0,0,0,0,0,0,0,0,T],
+  [T,0,T,T,T,T,0,T,T,T,T,T,0,T,T,0,T,T,T,T,T,0,T,T,T,T,0,T],
+  [T,D,T,T,T,T,0,T,T,T,T,T,0,T,T,0,T,T,T,T,T,0,T,T,T,T,D,T],
+  [T,0,T,T,T,T,0,T,T,T,T,T,0,T,T,0,T,T,T,T,T,0,T,T,T,T,0,T],
+  [T,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,T],
+  [T,0,T,T,T,T,0,T,T,0,T,T,T,T,T,T,T,T,0,T,T,0,T,T,T,T,0,T],
+  [T,0,T,T,T,T,0,T,T,0,T,T,T,T,T,T,T,T,0,T,T,0,T,T,T,T,0,T],
+  [T,0,0,0,0,0,0,T,T,0,0,0,0,T,T,0,0,0,0,T,T,0,0,0,0,0,0,T],
+  [T,T,T,T,T,T,0,T,T,T,T,T,E,T,T,E,T,T,T,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,T,T,T,E,T,T,E,T,T,T,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,E,E,E,E,E,E,E,E,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,H,H,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,T,T,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [E,E,E,E,E,E,0,E,E,E,T,T,T,T,T,T,T,T,E,E,E,0,E,E,E,E,E,E],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,T,T,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,T,T,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,E,E,E,E,E,E,E,E,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,T,T,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [T,T,T,T,T,T,0,T,T,E,T,T,T,T,T,T,T,T,E,T,T,0,T,T,T,T,T,T],
+  [T,0,0,0,0,0,0,0,0,0,0,0,0,T,T,0,0,0,0,0,0,0,0,0,0,0,0,T],
+  [T,0,T,T,T,T,0,T,T,T,T,T,0,T,T,0,T,T,T,T,T,0,T,T,T,T,0,T],
+  [T,0,T,T,T,T,0,T,T,T,T,T,0,T,T,0,T,T,T,T,T,0,T,T,T,T,0,T],
+  [T,D,0,0,T,T,0,0,0,0,0,0,0,E,E,0,0,0,0,0,0,0,T,T,0,0,D,T],
+  [T,T,T,0,T,T,0,T,T,0,T,T,T,T,T,T,T,T,0,T,T,0,T,T,0,T,T,T],
+  [T,T,T,0,T,T,0,T,T,0,T,T,T,T,T,T,T,T,0,T,T,0,T,T,0,T,T,T],
+  [T,0,0,0,0,0,0,T,T,0,0,0,0,T,T,0,0,0,0,T,T,0,0,0,0,0,0,T],
+  [T,0,T,T,T,T,T,T,T,T,T,T,0,T,T,0,T,T,T,T,T,T,T,T,T,T,0,T],
+  [T,0,T,T,T,T,T,T,T,T,T,T,0,T,T,0,T,T,T,T,T,T,T,T,T,T,0,T],
+  [T,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,T],
+  [T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T,T],
+];
+
+const ROWS = MAP_TEMPLATE.length;
+const COLS = MAP_TEMPLATE[0].length;
+
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+let CELL;
+function resize(){
+  const avail = Math.min(window.innerWidth, 480);
+  CELL = Math.floor(avail / COLS);
+  canvas.width  = CELL * COLS;
+  canvas.height = CELL * ROWS;
+}
+
+// ── Game state ─────────────────────────────────────
+let map, pac, ghosts, score, lives, level, gameOver, paused;
+let frightenTimer=0;
+let mouthAngle=0, mouthDir=1;
+let animId;
+let inputDir={x:1,y:0}, nextDir={x:1,y:0};
+
+const GHOST_COLORS=['#ff0000','#ffb8ff','#00ffff','#ffb852'];
+const GHOST_FRIGHTENED='#2222cc';
+
+function deepCopyMap(){
+  return MAP_TEMPLATE.map(r=>[...r]);
+}
+
+function newGame(){
+  map = deepCopyMap();
+  score=0; lives=3; level=1;
+  gameOver=false; paused=false;
+  spawnEntities();
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  animId=requestAnimationFrame(loop);
+}
+
+function spawnEntities(){
+  pac = { x:14, y:23, dx:0, dy:0, nextDx:1, nextDy:0, timer:0 };
+  ghosts = [
+    { x:13, y:14, dx:0, dy:-1, color:0, scatter:false, fright:0, home:true, homeTimer:0 },
+    { x:14, y:14, dx:0, dy:-1, color:1, scatter:false, fright:0, home:true, homeTimer:40 },
+    { x:15, y:14, dx:0, dy:-1, color:2, scatter:false, fright:0, home:true, homeTimer:80 },
+    { x:13, y:12, dx:1, dy:0, color:3, scatter:false, fright:0, home:false, homeTimer:0 },
+  ];
+  frightenTimer=0;
+  inputDir={x:1,y:0}; nextDir={x:1,y:0};
+}
+
+// ── Helpers ────────────────────────────────────────
+function canMove(x,y){
+  const tx=Math.round(x), ty=Math.round(y);
+  if(ty<0||ty>=ROWS) return true;
+  const wx=(tx+COLS)%COLS;
+  return map[ty][wx]!==1;
+}
+
+function wrapX(x){ return ((x%COLS)+COLS)%COLS; }
+
+const SPEED = 0.12;
+const GHOST_SPEED = 0.1;
+
+function movePac(){
+  // Try queued direction
+  const nx=pac.x+nextDir.x, ny=pac.y+nextDir.y;
+  const tx=Math.round(pac.x+nextDir.x*0.5), ty=Math.round(pac.y+nextDir.y*0.5);
+  if(canMove(tx,ty)){
+    pac.dx=nextDir.x; pac.dy=nextDir.y;
+  }
+
+  const fx=pac.x+pac.dx*SPEED, fy=pac.y+pac.dy*SPEED;
+  const checkX=Math.round(fx+pac.dx*0.4), checkY=Math.round(fy+pac.dy*0.4);
+  if(canMove(checkX,checkY)){
+    pac.x=wrapX(fx); pac.y=fy;
+  } else {
+    // Snap to grid
+    pac.x=Math.round(pac.x); pac.y=Math.round(pac.y);
+    pac.dx=0; pac.dy=0;
+  }
+
+  // Eat
+  const gx=Math.round(pac.x)%COLS, gy=Math.round(pac.y);
+  if(gy>=0&&gy<ROWS&&gx>=0&&gx<COLS){
+    const tile=map[gy][gx];
+    if(tile===0){ map[gy][gx]=2; score+=10; updateHUD(); }
+    else if(tile===3){ map[gy][gx]=2; score+=50; updateHUD(); frightenTimer=300; ghosts.forEach(g=>{ g.fright=300; }); }
+  }
+
+  // Check if all dots eaten
+  let dotsLeft=0;
+  for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(map[r][c]===0||map[r][c]===3) dotsLeft++;
+  if(dotsLeft===0){ level++; map=deepCopyMap(); spawnEntities(); updateHUD(); }
+}
+
+const DIRS=[{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+
+function moveGhost(g){
+  if(g.home){
+    g.homeTimer--;
+    if(g.homeTimer<=0){ g.home=false; g.x=14; g.y=11; g.dx=1; g.dy=0; }
+    return;
+  }
+  const fright=g.fright>0;
+  if(fright) g.fright--;
+  if(frightenTimer>0) frightenTimer--;
+
+  // Move toward pac or random
+  const cx=Math.round(g.x), cy=Math.round(g.y);
+  if(Math.abs(g.x-cx)<0.05 && Math.abs(g.y-cy)<0.05){
+    g.x=cx; g.y=cy;
+    // Choose next direction at intersections
+    let options=DIRS.filter(d=>{
+      if(d.x===-g.dx&&d.y===-g.dy) return false; // no U-turn
+      return canMove(cx+d.x, cy+d.y);
+    });
+    if(options.length===0) options=DIRS.filter(d=>canMove(cx+d.x,cy+d.y));
+    let chosen;
+    if(fright||options.length===1){
+      chosen=options[Math.floor(Math.random()*options.length)];
+    } else {
+      // Chase pac
+      chosen=options.reduce((best,d)=>{
+        const dx=(cx+d.x)-pac.x, dy=(cy+d.y)-pac.y;
+        const dist=dx*dx+dy*dy;
+        return dist<best.dist?{dir:d,dist}:best;
+      },{dir:options[0],dist:Infinity}).dir;
+    }
+    g.dx=chosen.x; g.dy=chosen.y;
+  }
+
+  const spd=fright?GHOST_SPEED*0.5:GHOST_SPEED;
+  g.x=wrapX(g.x+g.dx*spd);
+  g.y=g.y+g.dy*spd;
+}
+
+function checkCollisions(){
+  for(const g of ghosts){
+    if(g.home) continue;
+    const dx=pac.x-g.x, dy=pac.y-g.y;
+    if(Math.abs(dx)<0.8&&Math.abs(dy)<0.8){
+      if(g.fright>0){
+        g.fright=0; g.home=true; g.homeTimer=120; g.x=13; g.y=14;
+        score+=200; updateHUD();
+      } else {
+        lives--;
+        updateHUD();
+        if(lives<=0){ gameOver=true; showOverlay(); return; }
+        spawnEntities();
+        return;
+      }
+    }
+  }
+}
+
+// ── Main loop ──────────────────────────────────────
+let frameCount=0;
+function loop(){
+  if(gameOver||paused){ animId=null; return; }
+  frameCount++;
+  if(frameCount%2===0){
+    movePac();
+    ghosts.forEach(moveGhost);
+    checkCollisions();
+    mouthAngle+=0.18*mouthDir;
+    if(mouthAngle>0.28||mouthAngle<0.01) mouthDir*=-1;
+  }
+  draw();
+  animId=requestAnimationFrame(loop);
+}
+
+// ── Drawing ────────────────────────────────────────
+function draw(){
+  ctx.fillStyle='#000';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // Draw map
+  for(let r=0;r<ROWS;r++){
+    for(let c=0;c<COLS;c++){
+      const tile=map[r][c];
+      const px=c*CELL, py=r*CELL;
+      if(tile===1){
+        ctx.fillStyle='#1a1aff';
+        ctx.fillRect(px,py,CELL,CELL);
+        // Inner shade
+        ctx.fillStyle='#0000aa';
+        ctx.fillRect(px+2,py+2,CELL-4,CELL-4);
+      } else if(tile===0){
+        ctx.fillStyle='#ffff99';
+        ctx.beginPath();
+        ctx.arc(px+CELL/2,py+CELL/2,CELL*0.1,0,Math.PI*2);
+        ctx.fill();
+      } else if(tile===3){
+        ctx.fillStyle='#ffff00';
+        ctx.beginPath();
+        ctx.arc(px+CELL/2,py+CELL/2,CELL*0.25,0,Math.PI*2);
+        ctx.fill();
+      } else if(tile===4){
+        ctx.fillStyle='#ff88aa';
+        ctx.fillRect(px,py+CELL*0.4,CELL,CELL*0.2);
+      }
+    }
+  }
+
+  // Draw pac
+  const pw=CELL*0.45;
+  const angle=mouthAngle*Math.PI;
+  let facingAngle=0;
+  if(pac.dx===1)  facingAngle=0;
+  if(pac.dx===-1) facingAngle=Math.PI;
+  if(pac.dy===1)  facingAngle=Math.PI*0.5;
+  if(pac.dy===-1) facingAngle=Math.PI*1.5;
+  ctx.fillStyle='#ffff00';
+  ctx.beginPath();
+  ctx.moveTo(pac.x*CELL+CELL/2, pac.y*CELL+CELL/2);
+  ctx.arc(pac.x*CELL+CELL/2, pac.y*CELL+CELL/2, pw,
+    facingAngle+angle, facingAngle+Math.PI*2-angle);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw ghosts
+  for(const g of ghosts){
+    const gcolor=g.fright>0?(frightenTimer%30<15?'#ffffff':GHOST_FRIGHTENED):GHOST_COLORS[g.color];
+    const gx=g.x*CELL+CELL/2, gy=g.y*CELL+CELL/2;
+    const gr=CELL*0.42;
+
+    ctx.fillStyle=gcolor;
+    // Body
+    ctx.beginPath();
+    ctx.arc(gx,gy-gr*0.1,gr,Math.PI,0);
+    // Skirt
+    const segments=4;
+    ctx.lineTo(gx+gr,gy+gr*0.9);
+    for(let i=0;i<=segments;i++){
+      const wx=gx+gr-(i*2*gr/segments);
+      const wy=gy+gr*0.9-(i%2===0?gr*0.3:0);
+      ctx.lineTo(wx,wy);
+    }
+    ctx.lineTo(gx-gr,gy+gr*0.9);
+    ctx.closePath();
+    ctx.fill();
+
+    if(g.fright===0){
+      // Eyes
+      const eyeOffX=gr*0.28;
+      ctx.fillStyle='#fff';
+      ctx.beginPath(); ctx.arc(gx-eyeOffX,gy-gr*0.1,gr*0.25,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(gx+eyeOffX,gy-gr*0.1,gr*0.25,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle='#00f';
+      ctx.beginPath(); ctx.arc(gx-eyeOffX+g.dx*gr*0.1,gy-gr*0.1+g.dy*gr*0.1,gr*0.12,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(gx+eyeOffX+g.dx*gr*0.1,gy-gr*0.1+g.dy*gr*0.1,gr*0.12,0,Math.PI*2); ctx.fill();
+    }
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('level').textContent=level;
+  document.getElementById('lives').textContent=lives;
+}
+
+// ── Overlay ────────────────────────────────────────
+function showOverlay(){
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='GAME OVER';
+  ov.querySelector('p').textContent=`Score: ${score}`;
+  ov.style.display='flex';
+}
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+// ── Controls ───────────────────────────────────────
+document.addEventListener('keydown',e=>{
+  switch(e.code){
+    case 'ArrowLeft':  nextDir={x:-1,y:0}; break;
+    case 'ArrowRight': nextDir={x:1,y:0};  break;
+    case 'ArrowUp':    nextDir={x:0,y:-1}; break;
+    case 'ArrowDown':  nextDir={x:0,y:1};  break;
+  }
+  pac.nextDx=nextDir.x; pac.nextDy=nextDir.y;
+});
+
+function setDir(dx,dy){ nextDir={x:dx,y:dy}; pac.nextDx=dx; pac.nextDy=dy; }
+
+function addBtn(id,dx,dy){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{ e.preventDefault(); el.classList.add('pressed'); setDir(dx,dy); },{passive:false});
+  el.addEventListener('touchend',  e=>{ e.preventDefault(); el.classList.remove('pressed'); },{passive:false});
+  el.addEventListener('mousedown', ()=>setDir(dx,dy));
+}
+addBtn('btn-left', -1,0);
+addBtn('btn-right', 1,0);
+addBtn('btn-up',   0,-1);
+addBtn('btn-down',  0,1);
+
+// Swipe on canvas
+let swipeX, swipeY;
+canvas.addEventListener('touchstart',e=>{ e.preventDefault(); swipeX=e.touches[0].clientX; swipeY=e.touches[0].clientY; },{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-swipeX;
+  const dy=e.changedTouches[0].clientY-swipeY;
+  if(Math.abs(dx)>Math.abs(dy)){
+    if(Math.abs(dx)>15) setDir(dx>0?1:-1,0);
+  } else {
+    if(Math.abs(dy)>15) setDir(0,dy>0?1:-1);
+  }
+},{passive:false});
+
+// ── Init ───────────────────────────────────────────
+window.addEventListener('resize',()=>{ resize(); });
+resize();
+})();
+</script>
+</body>
+</html>
