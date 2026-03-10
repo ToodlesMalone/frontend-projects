@@ -76,17 +76,30 @@ In `AdManager.swift`, uncomment all lines marked `// REAL:` and remove the stub 
 
 ---
 
-## 5. TikiBlánco Game Theme Reference
+## 5. TikiBlánco Brand Identity (tikiblanco.com)
 
-| Element    | Style                         | Color (approx hex) |
-|------------|-------------------------------|-------------------|
-| Sky        | Warm sunset gradient          | `#FF8833` → `#FF6633` |
-| Ground     | Sandy beach with pebbles      | `#F5E0A6` |
-| Ocean stripe | Tropical turquoise          | `#17AECE` |
-| Player     | White coconut with carved face | `#F5EDD8` |
-| Obstacles  | Dark wood tiki totems         | `#8C4719` |
-| UI text    | Gold & warm white             | `#FFE64D` / `#FFF7ED` |
-| Font       | Georgia Bold (serif, tropical feel) | — |
+TikiBlánco is located in Blanco, Texas — Texas Hill Country badlands.
+"Where mysterious spirits of the tiki collide with the Texas Hill Country —
+a place of dark skies, blood moons, and cold drinks under the stars
+or in the comfort of a retired pirate's lair."
+
+Creatures of the night: rattlesnakes, armadillos, bats, ravens.
+
+| Element      | Style                                    | Color (approx hex)  |
+|--------------|------------------------------------------|---------------------|
+| Background   | Near-black night sky                     | `#0A0505`           |
+| Sky glow     | Deep crimson dark                        | `#6B0A0A`           |
+| Blood moon   | Orange-red moon with dark mare patches   | `#CC2E08`           |
+| Ground       | Rocky badlands dirt, dark brown          | `#381608`           |
+| Player       | Armadillo — armored shell, amber eye     | `#735A38`           |
+| Obstacles    | Stone tiki idol (glowing amber eyes) + rock clusters | `#615248` |
+| Dead trees   | Gnarled silhouettes in background        | `#1F1208` (70% alpha) |
+| Stars        | Dim warm stars, constellations           | `#E6D9A6`           |
+| UI text      | Bright amber gold                        | `#F2BF40`           |
+| UI border    | Bamboo brown frame                       | `#8C6114`           |
+| Font         | Georgia Bold/Italic (old-world tavern serif) | —              |
+| Game over    | "THE SPIRITS CLAIM YOU"                  | blood moon red      |
+| Tagline      | "...if you dare..."                      | italic, pulsing     |
 
 ---
 

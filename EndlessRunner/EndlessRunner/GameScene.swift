@@ -2,21 +2,20 @@ import SpriteKit
 import GameplayKit
 
 // MARK: - TikiBlánco Color Palette
+// Blanco, Texas — where tiki spirits meet the badlands.
+// Dark skies, blood moons, stone tiki idols, creatures of the night.
 private extension SKColor {
-    /// Deep tropical ocean sky at sunset
-    static let tikiBg      = SKColor(red: 0.99, green: 0.72, blue: 0.38, alpha: 1.0)  // warm amber horizon
-    /// Sandy beach ground
-    static let tikiSand    = SKColor(red: 0.96, green: 0.88, blue: 0.65, alpha: 1.0)
-    /// Ocean water stripe below sand
-    static let tikiOcean   = SKColor(red: 0.09, green: 0.60, blue: 0.78, alpha: 1.0)
-    /// Tiki totem brown
-    static let tikiTotem   = SKColor(red: 0.55, green: 0.28, blue: 0.10, alpha: 1.0)
-    /// Coconut — creamy white with dark shell
-    static let tikiCoconut = SKColor(red: 0.96, green: 0.93, blue: 0.85, alpha: 1.0)
-    /// Gold UI text
-    static let tikiBlancoGold  = SKColor(red: 1.00, green: 0.90, blue: 0.30, alpha: 1.0)
-    /// White-sand UI text
-    static let tikiBlancoWhite = SKColor(red: 1.00, green: 0.97, blue: 0.93, alpha: 1.0)
+    static let tbBlack      = SKColor(red: 0.04, green: 0.02, blue: 0.02, alpha: 1.0)  // near black
+    static let tbDeepRed    = SKColor(red: 0.42, green: 0.04, blue: 0.04, alpha: 1.0)  // dark crimson bg glow
+    static let tbBloodMoon  = SKColor(red: 0.80, green: 0.18, blue: 0.05, alpha: 1.0)  // blood moon orange-red
+    static let tbGold       = SKColor(red: 0.78, green: 0.55, blue: 0.10, alpha: 1.0)  // amber gold (logo text)
+    static let tbGoldBright = SKColor(red: 0.95, green: 0.75, blue: 0.25, alpha: 1.0)  // bright gold UI
+    static let tbBamboo     = SKColor(red: 0.55, green: 0.38, blue: 0.08, alpha: 1.0)  // bamboo brown
+    static let tbStone      = SKColor(red: 0.38, green: 0.32, blue: 0.26, alpha: 1.0)  // stone tiki
+    static let tbDirt       = SKColor(red: 0.22, green: 0.14, blue: 0.08, alpha: 1.0)  // badlands ground
+    static let tbDirtLight  = SKColor(red: 0.35, green: 0.22, blue: 0.12, alpha: 1.0)  // lighter ground
+    static let tbRust       = SKColor(red: 0.50, green: 0.18, blue: 0.05, alpha: 1.0)  // horizon rust
+    static let tbStar       = SKColor(red: 0.90, green: 0.85, blue: 0.65, alpha: 1.0)  // dim star
 }
 
 // MARK: - Physics Categories
@@ -35,6 +34,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var scoreLabel: SKLabelNode!
     private var gameOverLabel: SKLabelNode!
     private var restartButton: SKLabelNode!
+    private var bloodMoonNode: SKShapeNode!
 
     // MARK: - State
     private var isGameRunning = false
@@ -42,82 +42,186 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private var score = 0
     private var scoreTimer: Timer?
     private var obstacleTimer: Timer?
-    private var lastUpdateTime: TimeInterval = 0
 
     // MARK: - Constants
-    private let groundHeight: CGFloat = 90
-    private let playerSize = CGSize(width: 52, height: 52)
-    private let groundScrollSpeed: CGFloat = 310
-    private let jumpImpulse: CGFloat = 530
+    private let groundHeight: CGFloat = 70
+    private let playerSize   = CGSize(width: 46, height: 46)
+    private let groundScrollSpeed: CGFloat = 300
+    private let jumpImpulse: CGFloat = 520
 
     // MARK: - Setup
+
     override func didMove(to view: SKView) {
-        setupBackground()
+        backgroundColor = .tbBlack
         physicsWorld.gravity = CGVector(dx: 0, dy: -12)
         physicsWorld.contactDelegate = self
 
+        setupNightSky()
+        setupBloodMoon()
+        setupHorizonGlow()
+        setupDeadTreeSilhouettes()
         setupGround()
         setupPlayer()
         setupHUD()
         showStartScreen()
     }
 
-    // MARK: - TikiBlánco Background
+    // MARK: - TikiBlánco Night Sky Environment
 
-    private func setupBackground() {
-        // Layered sunset gradient via two rects
-        let skyBottom = SKSpriteNode(color: SKColor(red: 1.0, green: 0.55, blue: 0.20, alpha: 1), size: CGSize(width: frame.width, height: frame.height * 0.5))
-        skyBottom.anchorPoint = .zero
-        skyBottom.position = CGPoint(x: 0, y: frame.height * 0.5)
-        skyBottom.zPosition = -10
-        addChild(skyBottom)
+    private func setupNightSky() {
+        // Deep dark crimson gradient sky — two rects
+        let skyLow = SKSpriteNode(color: .tbDeepRed, size: CGSize(width: frame.width, height: frame.height * 0.45))
+        skyLow.anchorPoint = .zero
+        skyLow.position = CGPoint(x: 0, y: groundHeight)
+        skyLow.zPosition = -20
+        addChild(skyLow)
 
-        let skyTop = SKSpriteNode(color: SKColor(red: 0.95, green: 0.40, blue: 0.20, alpha: 1), size: CGSize(width: frame.width, height: frame.height * 0.5))
-        skyTop.anchorPoint = .zero
-        skyTop.position = CGPoint(x: 0, y: frame.height)
-        skyTop.zPosition = -10
-        addChild(skyTop)
+        let skyHigh = SKSpriteNode(color: .tbBlack, size: CGSize(width: frame.width, height: frame.height * 0.6))
+        skyHigh.anchorPoint = .zero
+        skyHigh.position = CGPoint(x: 0, y: frame.height * 0.45)
+        skyHigh.zPosition = -20
+        addChild(skyHigh)
 
-        backgroundColor = SKColor(red: 1.0, green: 0.65, blue: 0.25, alpha: 1)
+        // Stars
+        for _ in 0..<80 {
+            let size = CGFloat.random(in: 1.2...3.5)
+            let star = SKSpriteNode(color: .tbStar, size: CGSize(width: size, height: size))
+            star.position = CGPoint(
+                x: CGFloat.random(in: 0...frame.width),
+                y: CGFloat.random(in: frame.height * 0.35...frame.maxY)
+            )
+            star.alpha = CGFloat.random(in: 0.3...0.9)
+            star.zPosition = -15
 
-        // Ocean stripe just above ground
-        let ocean = SKSpriteNode(color: .tikiBlancoWhite, size: CGSize(width: frame.width, height: 18))
-        // Actually use ocean color
-        ocean.color = .tikiOcean
-        ocean.anchorPoint = CGPoint(x: 0, y: 0)
-        ocean.position = CGPoint(x: 0, y: groundHeight - 18)
-        ocean.zPosition = -1
-        addChild(ocean)
+            // Subtle twinkle on a few stars
+            if Bool.random() {
+                let twinkle = SKAction.repeatForever(SKAction.sequence([
+                    SKAction.fadeAlpha(to: CGFloat.random(in: 0.1...0.3), duration: Double.random(in: 1.0...3.0)),
+                    SKAction.fadeAlpha(to: CGFloat.random(in: 0.7...1.0), duration: Double.random(in: 1.0...3.0))
+                ]))
+                star.run(twinkle)
+            }
+            addChild(star)
+        }
 
-        // Distant palm silhouettes (decorative, non-scrolling)
-        for i in 0..<4 {
-            addPalmSilhouette(x: CGFloat(i) * frame.width / 3 + 60)
+        // Constellation lines (hint of Scorpio — Texas skies)
+        drawConstellation(points: [
+            CGPoint(x: frame.width * 0.12, y: frame.height * 0.82),
+            CGPoint(x: frame.width * 0.16, y: frame.height * 0.79),
+            CGPoint(x: frame.width * 0.20, y: frame.height * 0.83),
+            CGPoint(x: frame.width * 0.24, y: frame.height * 0.80)
+        ])
+    }
+
+    private func drawConstellation(points: [CGPoint]) {
+        guard points.count > 1 else { return }
+        let path = CGMutablePath()
+        path.move(to: points[0])
+        for pt in points.dropFirst() { path.addLine(to: pt) }
+        let line = SKShapeNode(path: path)
+        line.strokeColor = SKColor(red: 0.9, green: 0.85, blue: 0.6, alpha: 0.18)
+        line.lineWidth = 0.8
+        line.zPosition = -14
+        addChild(line)
+
+        for pt in points {
+            let dot = SKShapeNode(circleOfRadius: 1.5)
+            dot.fillColor = .tbStar
+            dot.strokeColor = .clear
+            dot.position = pt
+            dot.alpha = 0.6
+            dot.zPosition = -13
+            addChild(dot)
         }
     }
 
-    private func addPalmSilhouette(x: CGFloat) {
-        // Trunk
-        let trunk = SKSpriteNode(color: SKColor(red: 0.25, green: 0.12, blue: 0.04, alpha: 0.5),
-                                  size: CGSize(width: 8, height: CGFloat.random(in: 60...100)))
-        trunk.anchorPoint = CGPoint(x: 0.5, y: 0)
-        trunk.position = CGPoint(x: x, y: groundHeight)
-        trunk.zPosition = -2
-        addChild(trunk)
+    private func setupBloodMoon() {
+        // Outer glow
+        let glow = SKShapeNode(circleOfRadius: 56)
+        glow.fillColor = SKColor(red: 0.75, green: 0.12, blue: 0.02, alpha: 0.18)
+        glow.strokeColor = .clear
+        glow.position = CGPoint(x: frame.width * 0.78, y: frame.height * 0.72)
+        glow.zPosition = -12
+        addChild(glow)
 
-        // Frond cluster
-        let frond = SKSpriteNode(color: SKColor(red: 0.12, green: 0.35, blue: 0.12, alpha: 0.45),
-                                  size: CGSize(width: 44, height: 22))
-        frond.position = CGPoint(x: x, y: groundHeight + trunk.size.height + 10)
-        frond.zPosition = -2
-        addChild(frond)
+        // Moon body
+        bloodMoonNode = SKShapeNode(circleOfRadius: 38)
+        bloodMoonNode.fillColor = .tbBloodMoon
+        bloodMoonNode.strokeColor = SKColor(red: 0.9, green: 0.4, blue: 0.1, alpha: 0.4)
+        bloodMoonNode.lineWidth = 3
+        bloodMoonNode.position = CGPoint(x: frame.width * 0.78, y: frame.height * 0.72)
+        bloodMoonNode.zPosition = -11
+
+        // Dark mare patches on moon
+        for _ in 0..<5 {
+            let mare = SKShapeNode(circleOfRadius: CGFloat.random(in: 5...12))
+            mare.fillColor = SKColor(red: 0.55, green: 0.08, blue: 0.02, alpha: 0.55)
+            mare.strokeColor = .clear
+            mare.position = CGPoint(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: -20...20))
+            bloodMoonNode.addChild(mare)
+        }
+        addChild(bloodMoonNode)
+
+        // Slow pulse on glow
+        let pulse = SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.08, duration: 2.5),
+            SKAction.fadeAlpha(to: 0.28, duration: 2.5)
+        ]))
+        glow.run(pulse)
     }
 
-    // MARK: - Ground
+    private func setupHorizonGlow() {
+        // Red-rust horizon glow strip
+        let glow = SKSpriteNode(color: .tbRust, size: CGSize(width: frame.width, height: 30))
+        glow.anchorPoint = CGPoint(x: 0, y: 0.5)
+        glow.position = CGPoint(x: 0, y: groundHeight + 5)
+        glow.alpha = 0.35
+        glow.zPosition = -8
+        addChild(glow)
+    }
+
+    private func setupDeadTreeSilhouettes() {
+        // Gnarled dead trees in the background — signature TikiBlánco look
+        let treePositions: [CGFloat] = [
+            frame.width * 0.08,
+            frame.width * 0.35,
+            frame.width * 0.62,
+            frame.width * 0.88
+        ]
+        for x in treePositions {
+            addDeadTree(at: x, height: CGFloat.random(in: 80...130))
+        }
+    }
+
+    private func addDeadTree(at x: CGFloat, height: CGFloat) {
+        let color = SKColor(red: 0.12, green: 0.07, blue: 0.04, alpha: 0.70)
+
+        // Trunk
+        let trunk = SKSpriteNode(color: color, size: CGSize(width: 6, height: height))
+        trunk.anchorPoint = CGPoint(x: 0.5, y: 0)
+        trunk.position = CGPoint(x: x, y: groundHeight)
+        trunk.zPosition = -5
+        addChild(trunk)
+
+        // Gnarled branches
+        let branchAngles: [CGFloat] = [-55, -30, 30, 50]
+        for angle in branchAngles {
+            let branchLen = CGFloat.random(in: 25...55)
+            let branch = SKSpriteNode(color: color, size: CGSize(width: 4, height: branchLen))
+            branch.anchorPoint = CGPoint(x: 0.5, y: 0)
+            branch.position = CGPoint(x: x + CGFloat.random(in: -8...8),
+                                       y: groundHeight + height * CGFloat.random(in: 0.4...0.85))
+            branch.zRotation = angle * .pi / 180
+            branch.zPosition = -5
+            addChild(branch)
+        }
+    }
+
+    // MARK: - Ground (Badlands Rocky Terrain)
 
     private func setupGround() {
         groundNode = SKNode()
         addChild(groundNode)
-
         for i in 0..<3 {
             let tile = makeGroundTile(xOffset: CGFloat(i) * frame.width)
             groundNode.addChild(tile)
@@ -129,24 +233,32 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         container.position = CGPoint(x: xOffset, y: 0)
         container.name = "groundTile"
 
-        // Sand top layer
-        let sand = SKSpriteNode(color: .tikiSand, size: CGSize(width: frame.width, height: groundHeight))
-        sand.anchorPoint = CGPoint(x: 0, y: 0)
+        // Main dirt/rock ground
+        let base = SKSpriteNode(color: .tbDirt, size: CGSize(width: frame.width, height: groundHeight))
+        base.anchorPoint = CGPoint(x: 0, y: 0)
+        container.addChild(base)
 
-        // Add small pebble dots for texture
-        for _ in 0..<12 {
-            let pebble = SKSpriteNode(color: SKColor(red: 0.78, green: 0.65, blue: 0.42, alpha: 0.8),
-                                      size: CGSize(width: CGFloat.random(in: 3...7), height: CGFloat.random(in: 3...6)))
-            pebble.position = CGPoint(x: CGFloat.random(in: 0...frame.width),
-                                      y: CGFloat.random(in: 5...groundHeight - 10))
-            sand.addChild(pebble)
+        // Rock surface texture strip
+        let surface = SKSpriteNode(color: .tbDirtLight, size: CGSize(width: frame.width, height: 10))
+        surface.anchorPoint = CGPoint(x: 0, y: 0)
+        surface.position = CGPoint(x: 0, y: groundHeight - 10)
+        container.addChild(surface)
+
+        // Random rocks scattered on surface
+        for _ in 0..<10 {
+            let w = CGFloat.random(in: 5...16)
+            let h = CGFloat.random(in: 4...9)
+            let rock = SKSpriteNode(color: .tbStone, size: CGSize(width: w, height: h))
+            rock.position = CGPoint(x: CGFloat.random(in: 0...frame.width),
+                                     y: groundHeight - 5)
+            rock.zPosition = 1
+            container.addChild(rock)
         }
 
-        container.addChild(sand)
-
-        // Physics on the container
-        let body = SKPhysicsBody(rectangleOf: CGSize(width: frame.width, height: groundHeight),
-                                  center: CGPoint(x: frame.width / 2, y: groundHeight / 2))
+        let body = SKPhysicsBody(
+            rectangleOf: CGSize(width: frame.width, height: groundHeight),
+            center: CGPoint(x: frame.width / 2, y: groundHeight / 2)
+        )
         body.isDynamic = false
         body.categoryBitMask = PhysicsCategory.ground
         body.contactTestBitMask = PhysicsCategory.player
@@ -155,27 +267,33 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         return container
     }
 
-    // MARK: - Player (Coconut character)
+    // MARK: - Player (Armadillo — "Creatures of the night are our neighbors here")
 
     private func setupPlayer() {
-        // Outer shell
-        playerNode = SKSpriteNode(color: .tikiBlancoWhite, size: playerSize)
+        // Body — armored shell oval
+        playerNode = SKSpriteNode(color: SKColor(red: 0.45, green: 0.35, blue: 0.22, alpha: 1), size: playerSize)
         playerNode.position = CGPoint(x: 110, y: groundHeight + playerSize.height / 2)
         playerNode.name = "player"
 
-        // Eyes (two dark dots)
-        let eyeL = SKSpriteNode(color: SKColor(red: 0.2, green: 0.1, blue: 0.05, alpha: 1), size: CGSize(width: 7, height: 7))
-        eyeL.position = CGPoint(x: -10, y: 10)
-        playerNode.addChild(eyeL)
+        // Shell plate bands
+        for i in 0..<3 {
+            let band = SKSpriteNode(color: SKColor(red: 0.30, green: 0.22, blue: 0.12, alpha: 0.8),
+                                     size: CGSize(width: 42, height: 5))
+            band.position = CGPoint(x: 0, y: CGFloat(i - 1) * 11)
+            playerNode.addChild(band)
+        }
 
-        let eyeR = SKSpriteNode(color: SKColor(red: 0.2, green: 0.1, blue: 0.05, alpha: 1), size: CGSize(width: 7, height: 7))
-        eyeR.position = CGPoint(x: 10, y: 10)
-        playerNode.addChild(eyeR)
+        // Snout
+        let snout = SKSpriteNode(color: SKColor(red: 0.55, green: 0.42, blue: 0.28, alpha: 1),
+                                  size: CGSize(width: 14, height: 10))
+        snout.position = CGPoint(x: 24, y: -6)
+        playerNode.addChild(snout)
 
-        // Coconut husk lines
-        let line = SKSpriteNode(color: SKColor(red: 0.65, green: 0.45, blue: 0.22, alpha: 0.6), size: CGSize(width: 40, height: 3))
-        line.position = CGPoint(x: 0, y: 0)
-        playerNode.addChild(line)
+        // Tiny eye
+        let eye = SKSpriteNode(color: SKColor(red: 0.90, green: 0.75, blue: 0.20, alpha: 1),
+                                size: CGSize(width: 5, height: 5))
+        eye.position = CGPoint(x: 18, y: 8)
+        playerNode.addChild(eye)
 
         playerNode.physicsBody = SKPhysicsBody(rectangleOf: playerSize)
         playerNode.physicsBody?.allowsRotation = false
@@ -189,57 +307,89 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     // MARK: - HUD
 
     private func setupHUD() {
-        // Score badge background
-        let badge = SKSpriteNode(color: SKColor(red: 0, green: 0, blue: 0, alpha: 0.25), size: CGSize(width: 130, height: 46))
+        // Skull icon + score — bamboo frame style
+        let badge = SKSpriteNode(color: SKColor(red: 0.10, green: 0.06, blue: 0.03, alpha: 0.80),
+                                  size: CGSize(width: 150, height: 44))
         badge.position = CGPoint(x: frame.midX, y: frame.maxY - 50)
         badge.zPosition = 9
-        badge.cornerRadius = 12
         addChild(badge)
 
+        // Bamboo border on badge
+        let border = SKShapeNode(rectOf: CGSize(width: 150, height: 44), cornerRadius: 4)
+        border.strokeColor = .tbBamboo
+        border.fillColor = .clear
+        border.lineWidth = 2
+        border.position = CGPoint(x: frame.midX, y: frame.maxY - 50)
+        border.zPosition = 10
+        addChild(border)
+
         scoreLabel = SKLabelNode(fontNamed: "Georgia-Bold")
-        scoreLabel.fontSize = 30
-        scoreLabel.fontColor = .tikiBlancoGold
+        scoreLabel.fontSize = 26
+        scoreLabel.fontColor = .tbGoldBright
         scoreLabel.verticalAlignmentMode = .center
         scoreLabel.position = CGPoint(x: frame.midX, y: frame.maxY - 50)
-        scoreLabel.zPosition = 10
-        scoreLabel.text = "🌴 0"
+        scoreLabel.zPosition = 11
+        scoreLabel.text = "☠️  0"
         addChild(scoreLabel)
     }
 
     // MARK: - Start Screen
 
     private func showStartScreen() {
-        // Title
+        // Dark overlay panel — styled like TikiBlánco bamboo sign
+        let panel = SKSpriteNode(color: SKColor(red: 0.08, green: 0.04, blue: 0.02, alpha: 0.88),
+                                  size: CGSize(width: 320, height: 200))
+        panel.position = CGPoint(x: frame.midX, y: frame.midY + 10)
+        panel.zPosition = 10
+        panel.name = "startLabel"
+        addChild(panel)
+
+        // Bamboo border
+        let border = SKShapeNode(rectOf: CGSize(width: 320, height: 200), cornerRadius: 6)
+        border.strokeColor = .tbBamboo
+        border.fillColor = .clear
+        border.lineWidth = 4
+        border.position = CGPoint(x: frame.midX, y: frame.midY + 10)
+        border.zPosition = 11
+        border.name = "startBorder"
+        addChild(border)
+
         let title = SKLabelNode(fontNamed: "Georgia-Bold")
-        title.text = "TikiBlánco"
-        title.fontSize = 54
-        title.fontColor = .tikiBlancoWhite
-        title.position = CGPoint(x: frame.midX, y: frame.midY + 60)
-        title.name = "startLabel"
-        title.zPosition = 10
-        // Subtle shadow
-        let shadow = SKLabelNode(fontNamed: "Georgia-Bold")
-        shadow.text = "TikiBlánco"
-        shadow.fontSize = 54
-        shadow.fontColor = SKColor(red: 0.3, green: 0.1, blue: 0, alpha: 0.5)
-        shadow.position = CGPoint(x: 2, y: -3)
-        shadow.zPosition = -1
-        title.addChild(shadow)
+        title.text = "TIKI BLÁNCO"
+        title.fontSize = 38
+        title.fontColor = .tbGoldBright
+        title.position = CGPoint(x: frame.midX, y: frame.midY + 50)
+        title.zPosition = 12
+        title.name = "startTitle"
         addChild(title)
 
-        let tapLabel = SKLabelNode(fontNamed: "Georgia")
-        tapLabel.text = "Tap to Run!"
-        tapLabel.fontSize = 32
-        tapLabel.fontColor = .tikiBlancoGold
-        tapLabel.position = CGPoint(x: frame.midX, y: frame.midY)
-        tapLabel.name = "tapLabel"
-        tapLabel.zPosition = 10
-        // Pulse animation
-        tapLabel.run(SKAction.repeatForever(SKAction.sequence([
-            SKAction.fadeAlpha(to: 0.3, duration: 0.7),
-            SKAction.fadeAlpha(to: 1.0, duration: 0.7)
+        let subtitle = SKLabelNode(fontNamed: "Georgia-Italic")
+        subtitle.text = "Blanco, Texas"
+        subtitle.fontSize = 18
+        subtitle.fontColor = .tbGold
+        subtitle.position = CGPoint(x: frame.midX, y: frame.midY + 22)
+        subtitle.zPosition = 12
+        subtitle.name = "startSubtitle"
+        addChild(subtitle)
+
+        let tap = SKLabelNode(fontNamed: "Georgia-Italic")
+        tap.text = "...tap to run, if you dare..."
+        tap.fontSize = 20
+        tap.fontColor = .tbBloodMoon
+        tap.position = CGPoint(x: frame.midX, y: frame.midY - 20)
+        tap.zPosition = 12
+        tap.name = "startTap"
+        tap.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.2, duration: 1.0),
+            SKAction.fadeAlpha(to: 1.0, duration: 1.0)
         ])))
-        addChild(tapLabel)
+        addChild(tap)
+    }
+
+    private func removeStartScreen() {
+        for name in ["startLabel", "startBorder", "startTitle", "startSubtitle", "startTap"] {
+            childNode(withName: name)?.removeFromParent()
+        }
     }
 
     // MARK: - Start / Restart
@@ -247,14 +397,16 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     private func startGame() {
         isGameRunning = true
         score = 0
-        scoreLabel.text = "🌴 0"
+        scoreLabel.text = "☠️  0"
 
-        childNode(withName: "startLabel")?.removeFromParent()
-        childNode(withName: "tapLabel")?.removeFromParent()
+        removeStartScreen()
         gameOverLabel?.removeFromParent()
         restartButton?.removeFromParent()
+        childNode(withName: "gameOverBg")?.removeFromParent()
+        childNode(withName: "finalScore")?.removeFromParent()
+        childNode(withName: "gameOverBorder")?.removeFromParent()
         enumerateChildNodes(withName: "obstacle") { node, _ in node.removeFromParent() }
-        enumerateChildNodes(withName: "scorePopup") { node, _ in node.removeFromParent() }
+        enumerateChildNodes(withName: "dustPuff") { node, _ in node.removeFromParent() }
 
         playerNode.physicsBody?.velocity = .zero
         playerNode.position = CGPoint(x: 110, y: groundHeight + playerSize.height / 2)
@@ -270,14 +422,14 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         scoreTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             guard let self = self, self.isGameRunning else { return }
             self.score += 1
-            self.scoreLabel.text = "🌴 \(self.score)"
+            self.scoreLabel.text = "☠️  \(self.score)"
         }
 
         scheduleNextObstacle()
     }
 
     private func scheduleNextObstacle() {
-        let delay = Double.random(in: 1.4...2.8)
+        let delay = Double.random(in: 1.3...2.8)
         obstacleTimer = Timer.scheduledTimer(withTimeInterval: delay, repeats: false) { [weak self] _ in
             guard let self = self, self.isGameRunning else { return }
             self.spawnObstacle()
@@ -285,55 +437,75 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         }
     }
 
-    // MARK: - Tiki Totem Obstacles
+    // MARK: - Obstacles (Stone Tiki Idols + Rattlesnake rocks)
 
     private func spawnObstacle() {
-        let height = CGFloat.random(in: 50...110)
-        let totem = buildTikiTotem(height: height)
-        totem.position = CGPoint(x: frame.maxX + 35, y: groundHeight)
-        totem.name = "obstacle"
-        addChild(totem)
+        // Alternate between tiki idol and rock cluster
+        if Bool.random() {
+            spawnTikiIdol()
+        } else {
+            spawnRockCluster()
+        }
+    }
+
+    private func spawnTikiIdol() {
+        let height = CGFloat.random(in: 55...105)
+        let idol = buildTikiIdol(height: height)
+        idol.position = CGPoint(x: frame.maxX + 40, y: groundHeight)
+        idol.name = "obstacle"
+        addChild(idol)
 
         let duration = Double(frame.width + 80) / Double(groundScrollSpeed)
-        totem.run(SKAction.sequence([
+        idol.run(SKAction.sequence([
             SKAction.moveBy(x: -(frame.width + 80), y: 0, duration: duration),
             SKAction.removeFromParent()
         ]))
     }
 
-    private func buildTikiTotem(height: CGFloat) -> SKNode {
+    private func buildTikiIdol(height: CGFloat) -> SKNode {
         let container = SKNode()
 
-        // Totem body
-        let body = SKSpriteNode(color: .tikiBlancoWhite, size: CGSize(width: 32, height: height))
-        body.color = .tikiTotem
+        // Stone body
+        let body = SKSpriteNode(color: .tbStone, size: CGSize(width: 34, height: height))
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
 
-        // Carved face — eyes
-        let eyeL = SKSpriteNode(color: .tikiBlancoGold, size: CGSize(width: 6, height: 5))
-        eyeL.position = CGPoint(x: -6, y: height - 18)
-        body.addChild(eyeL)
+        // Carved angry brow ridge
+        let brow = SKSpriteNode(color: SKColor(red: 0.25, green: 0.20, blue: 0.15, alpha: 1),
+                                  size: CGSize(width: 28, height: 8))
+        brow.position = CGPoint(x: 0, y: height - 16)
+        body.addChild(brow)
 
-        let eyeR = SKSpriteNode(color: .tikiBlancoGold, size: CGSize(width: 6, height: 5))
-        eyeR.position = CGPoint(x: 6, y: height - 18)
-        body.addChild(eyeR)
+        // Hollow eyes — glowing amber (tiki torch lit)
+        for xOff: CGFloat in [-8, 8] {
+            let eye = SKSpriteNode(color: .tbGoldBright, size: CGSize(width: 7, height: 6))
+            eye.position = CGPoint(x: xOff, y: height - 26)
+            // Flicker
+            eye.run(SKAction.repeatForever(SKAction.sequence([
+                SKAction.fadeAlpha(to: 0.4, duration: Double.random(in: 0.1...0.3)),
+                SKAction.fadeAlpha(to: 1.0, duration: Double.random(in: 0.1...0.3))
+            ])))
+            body.addChild(eye)
+        }
 
-        // Carved mouth
-        let mouth = SKSpriteNode(color: .tikiBlancoGold, size: CGSize(width: 18, height: 4))
-        mouth.position = CGPoint(x: 0, y: height - 30)
+        // Wide carved mouth
+        let mouth = SKSpriteNode(color: SKColor(red: 0.15, green: 0.10, blue: 0.07, alpha: 1),
+                                  size: CGSize(width: 24, height: 7))
+        mouth.position = CGPoint(x: 0, y: height - 40)
         body.addChild(mouth)
 
-        // Headdress on top
-        let crown = SKSpriteNode(color: SKColor(red: 0.70, green: 0.20, blue: 0.10, alpha: 1), size: CGSize(width: 44, height: 14))
+        // Headdress / crown
+        let crown = SKSpriteNode(color: SKColor(red: 0.28, green: 0.22, blue: 0.14, alpha: 1),
+                                  size: CGSize(width: 42, height: 16))
         crown.anchorPoint = CGPoint(x: 0.5, y: 0)
         crown.position = CGPoint(x: 0, y: height)
         body.addChild(crown)
 
         container.addChild(body)
 
-        // Physics body
-        let phys = SKPhysicsBody(rectangleOf: CGSize(width: 32, height: height),
-                                  center: CGPoint(x: 0, y: height / 2))
+        let phys = SKPhysicsBody(
+            rectangleOf: CGSize(width: 34, height: height),
+            center: CGPoint(x: 0, y: height / 2)
+        )
         phys.isDynamic = false
         phys.categoryBitMask = PhysicsCategory.obstacle
         phys.contactTestBitMask = PhysicsCategory.player
@@ -341,6 +513,48 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         container.physicsBody = phys
 
         return container
+    }
+
+    private func spawnRockCluster() {
+        let container = SKNode()
+        container.position = CGPoint(x: frame.maxX + 40, y: groundHeight)
+        container.name = "obstacle"
+
+        // 2–3 stacked rocks
+        var totalHeight: CGFloat = 0
+        let numRocks = Int.random(in: 2...3)
+        for i in 0..<numRocks {
+            let w = CGFloat.random(in: 28...44)
+            let h = CGFloat.random(in: 18...30)
+            let rock = SKSpriteNode(color: SKColor(
+                red: CGFloat.random(in: 0.28...0.42),
+                green: CGFloat.random(in: 0.22...0.32),
+                blue: CGFloat.random(in: 0.16...0.24),
+                alpha: 1
+            ), size: CGSize(width: w, height: h))
+            rock.anchorPoint = CGPoint(x: 0.5, y: 0)
+            rock.position = CGPoint(x: CGFloat.random(in: -5...5), y: totalHeight)
+            container.addChild(rock)
+            totalHeight += h - 4
+        }
+
+        let phys = SKPhysicsBody(
+            rectangleOf: CGSize(width: 40, height: totalHeight),
+            center: CGPoint(x: 0, y: totalHeight / 2)
+        )
+        phys.isDynamic = false
+        phys.categoryBitMask = PhysicsCategory.obstacle
+        phys.contactTestBitMask = PhysicsCategory.player
+        phys.collisionBitMask = PhysicsCategory.player
+        container.physicsBody = phys
+
+        addChild(container)
+
+        let duration = Double(frame.width + 80) / Double(groundScrollSpeed)
+        container.run(SKAction.sequence([
+            SKAction.moveBy(x: -(frame.width + 80), y: 0, duration: duration),
+            SKAction.removeFromParent()
+        ]))
     }
 
     // MARK: - Input
@@ -367,26 +581,28 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         isPlayerOnGround = false
         playerNode.physicsBody?.applyImpulse(CGVector(dx: 0, dy: jumpImpulse))
 
-        // Coconut bounce animation
-        let squash  = SKAction.scaleX(to: 1.3, y: 0.75, duration: 0.05)
-        let stretch = SKAction.scaleX(to: 0.85, y: 1.25, duration: 0.10)
-        let restore = SKAction.scaleX(to: 1.0,  y: 1.0,  duration: 0.10)
-        playerNode.run(SKAction.sequence([squash, stretch, restore]))
+        // Armadillo hop animation
+        let squat  = SKAction.scaleX(to: 1.25, y: 0.78, duration: 0.05)
+        let spring = SKAction.scaleX(to: 0.82, y: 1.22, duration: 0.10)
+        let settle = SKAction.scaleX(to: 1.00, y: 1.00, duration: 0.10)
+        playerNode.run(SKAction.sequence([squat, spring, settle]))
 
-        // Small dust puff on jump
         spawnDustPuff(at: playerNode.position)
     }
 
     private func spawnDustPuff(at point: CGPoint) {
-        for _ in 0..<5 {
-            let dust = SKSpriteNode(color: SKColor(red: 0.96, green: 0.88, blue: 0.65, alpha: 0.7),
-                                    size: CGSize(width: CGFloat.random(in: 4...10), height: CGFloat.random(in: 4...10)))
+        for _ in 0..<6 {
+            let dust = SKSpriteNode(
+                color: SKColor(red: 0.30, green: 0.20, blue: 0.10, alpha: 0.65),
+                size: CGSize(width: CGFloat.random(in: 4...9), height: CGFloat.random(in: 4...9))
+            )
             dust.position = CGPoint(x: point.x + CGFloat.random(in: -14...14),
                                     y: point.y - playerSize.height / 2 + 4)
             dust.zPosition = 5
+            dust.name = "dustPuff"
             addChild(dust)
             let drift = SKAction.group([
-                SKAction.moveBy(x: CGFloat.random(in: -20...20), y: CGFloat.random(in: 5...20), duration: 0.4),
+                SKAction.moveBy(x: CGFloat.random(in: -18...18), y: CGFloat.random(in: 4...18), duration: 0.4),
                 SKAction.fadeOut(withDuration: 0.4),
                 SKAction.scale(to: 0.1, duration: 0.4)
             ])
@@ -418,65 +634,73 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
         isGameRunning = false
         scoreTimer?.invalidate()
         obstacleTimer?.invalidate()
-
         playerNode.physicsBody?.velocity = .zero
 
-        // Hit flash — orange-red for tiki fire
+        // Blood moon flash
         let flash = SKAction.sequence([
-            SKAction.colorize(with: SKColor(red: 0.9, green: 0.3, blue: 0.1, alpha: 1), colorBlendFactor: 0.8, duration: 0.08),
-            SKAction.colorize(with: .tikiBlancoWhite, colorBlendFactor: 0, duration: 0.35)
+            SKAction.colorize(with: .tbBloodMoon, colorBlendFactor: 0.85, duration: 0.08),
+            SKAction.colorize(with: SKColor(red: 0.45, green: 0.35, blue: 0.22, alpha: 1),
+                              colorBlendFactor: 0, duration: 0.45)
         ])
         playerNode.run(flash)
 
         // Dark overlay
-        let overlay = SKSpriteNode(color: SKColor(red: 0.1, green: 0.05, blue: 0, alpha: 0.55), size: frame.size)
+        let overlay = SKSpriteNode(color: SKColor(red: 0, green: 0, blue: 0, alpha: 0.65), size: frame.size)
         overlay.anchorPoint = .zero
         overlay.position = .zero
         overlay.zPosition = 9
-        overlay.name = "overlay"
+        overlay.name = "gameOverBg"
         addChild(overlay)
 
+        // Bamboo-framed panel
+        let panelBorder = SKShapeNode(rectOf: CGSize(width: 340, height: 210), cornerRadius: 6)
+        panelBorder.strokeColor = .tbBamboo
+        panelBorder.fillColor = SKColor(red: 0.07, green: 0.04, blue: 0.02, alpha: 0.92)
+        panelBorder.lineWidth = 4
+        panelBorder.position = CGPoint(x: frame.midX, y: frame.midY + 10)
+        panelBorder.zPosition = 10
+        panelBorder.name = "gameOverBorder"
+        addChild(panelBorder)
+
         gameOverLabel = SKLabelNode(fontNamed: "Georgia-Bold")
-        gameOverLabel.text = "Wiped Out!"
-        gameOverLabel.fontSize = 54
-        gameOverLabel.fontColor = .tikiBlancoWhite
-        gameOverLabel.position = CGPoint(x: frame.midX, y: frame.midY + 55)
-        gameOverLabel.zPosition = 10
+        gameOverLabel.text = "THE SPIRITS CLAIM YOU"
+        gameOverLabel.fontSize = 28
+        gameOverLabel.fontColor = .tbBloodMoon
+        gameOverLabel.position = CGPoint(x: frame.midX, y: frame.midY + 65)
+        gameOverLabel.zPosition = 11
         addChild(gameOverLabel)
 
         let finalScore = SKLabelNode(fontNamed: "Georgia")
-        finalScore.text = "🌴 Score: \(score)"
-        finalScore.fontSize = 34
-        finalScore.fontColor = .tikiBlancoGold
-        finalScore.position = CGPoint(x: frame.midX, y: frame.midY + 5)
-        finalScore.zPosition = 10
+        finalScore.text = "☠️  Score: \(score)"
+        finalScore.fontSize = 30
+        finalScore.fontColor = .tbGoldBright
+        finalScore.position = CGPoint(x: frame.midX, y: frame.midY + 22)
+        finalScore.zPosition = 11
+        finalScore.name = "finalScore"
+        finalScore.alpha = 0
+        finalScore.run(SKAction.sequence([SKAction.wait(forDuration: 0.3), SKAction.fadeIn(withDuration: 0.4)]))
         addChild(finalScore)
 
         restartButton = SKLabelNode(fontNamed: "Georgia-Bold")
-        restartButton.text = "  Run Again  "
-        restartButton.fontSize = 28
-        restartButton.fontColor = SKColor(red: 0.1, green: 0.05, blue: 0, alpha: 1)
-        restartButton.position = CGPoint(x: frame.midX, y: frame.midY - 55)
+        restartButton.text = "Run Again...if you dare"
+        restartButton.fontSize = 22
+        restartButton.fontColor = .tbGold
+        restartButton.position = CGPoint(x: frame.midX, y: frame.midY - 28)
         restartButton.zPosition = 11
+        restartButton.run(SKAction.repeatForever(SKAction.sequence([
+            SKAction.fadeAlpha(to: 0.3, duration: 0.9),
+            SKAction.fadeAlpha(to: 1.0, duration: 0.9)
+        ])))
         addChild(restartButton)
 
-        // Gold button background
-        let btnBg = SKSpriteNode(color: .tikiBlancoGold, size: CGSize(width: 180, height: 44))
-        btnBg.position = CGPoint(x: 0, y: -2)
-        btnBg.zPosition = -1
-        btnBg.cornerRadius = 10
-        restartButton.addChild(btnBg)
-
-        // Slide-in animations
-        gameOverLabel.position.y += 80
-        gameOverLabel.run(SKAction.moveTo(y: frame.midY + 55, duration: 0.4))
-        finalScore.alpha = 0
-        finalScore.run(SKAction.sequence([SKAction.wait(forDuration: 0.25), SKAction.fadeIn(withDuration: 0.3)]))
+        // Slide game over label in from top
+        gameOverLabel.position.y += 60
+        gameOverLabel.run(SKAction.moveTo(y: frame.midY + 65, duration: 0.4))
 
         NotificationCenter.default.post(name: .gameDidEnd, object: nil, userInfo: ["score": score])
     }
 
-    // MARK: - Update Loop
+    // MARK: - Update
 
     override func update(_ currentTime: TimeInterval) {
         guard isGameRunning else { return }
@@ -494,25 +718,7 @@ class GameScene: SKScene, SKPhysicsContactDelegate {
     }
 }
 
-// MARK: - Notification Name
+// MARK: - Notification
 extension Notification.Name {
     static let gameDidEnd = Notification.Name("gameDidEnd")
-}
-
-// MARK: - SKSpriteNode rounded corners helper
-private extension SKSpriteNode {
-    var cornerRadius: CGFloat {
-        get { return 0 }
-        set {
-            guard newValue > 0 else { return }
-            let rect = CGRect(origin: CGPoint(x: -size.width/2, y: -size.height/2), size: size)
-            let path = UIBezierPath(roundedRect: rect, cornerRadius: newValue)
-            let shape = SKShapeNode(path: path.cgPath)
-            shape.fillColor = color
-            shape.strokeColor = .clear
-            shape.lineWidth = 0
-            color = .clear
-            addChild(shape)
-        }
-    }
 }
