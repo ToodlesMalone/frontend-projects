@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>BREAKOUT — NES Games</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #game-wrap { gap: 4px; }
+    /* Breakout uses left/right paddle — only show those + A to launch */
+    #btn-up, #btn-down, #btn-center { opacity:0.2; pointer-events:none; }
+    #btn-b { background: #2a2a4a; color: #888; }
+    #gamepad { flex-direction: row; align-items: center; justify-content: space-between; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>BREAKOUT</h1>
+  <p>Break all the bricks!<br/>Tap A to launch the ball.</p>
+  <button class="overlay-btn" id="overlay-btn">START GAME</button>
+  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">level</span><span id="level">1</span></span>
+    <span><span class="label">lives</span><span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="dpad">
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn" id="btn-left">◄</div>
+      <div class="dpad-btn" id="btn-center"></div>
+      <div class="dpad-btn" id="btn-right">►</div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+    </div>
+    <div id="action-btns">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-b">—</button>
+        <span style="font-size:10px;color:#888;">B</span>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+        <button class="action-btn" id="btn-a">FIRE</button>
+        <span style="font-size:10px;color:#888;">A</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+// ── Layout constants ───────────────────────────────
+const BRICK_ROWS  = 6;
+const BRICK_COLS  = 10;
+const BRICK_PAD   = 4;
+const PADDLE_H    = 12;
+const BALL_R      = 7;
+
+// ── State ──────────────────────────────────────────
+let W, H, brickW, brickH;
+let px, py, pWidth;      // paddle
+let bx, by, bdx, bdy;    // ball
+let launched;
+let bricks;
+let score, lives, level;
+let gameOver, paused, won;
+let animId;
+let keysDown = {};
+
+// Colors per row (NES-ish palette)
+const rowColors = ['#e52222','#e57722','#e5e522','#22e522','#2222e5','#9922e5'];
+
+function resize(){
+  const avail = Math.min(window.innerWidth, 480);
+  W = avail - 8;
+  H = Math.round(W * 1.4);
+  canvas.width  = W;
+  canvas.height = H;
+
+  brickW = (W - BRICK_PAD*(BRICK_COLS+1)) / BRICK_COLS;
+  brickH = Math.round(H * 0.04);
+  pWidth = Math.round(W * 0.22);
+  if(!gameOver) resetBall();
+}
+
+function resetBall(){
+  px = W/2 - pWidth/2;
+  py = H - Math.round(H*0.08) - PADDLE_H;
+  bx = px + pWidth/2;
+  by = py - BALL_R - 2;
+  const spd = 4 + (level-1)*0.6;
+  const ang = (Math.random()*80+50)*(Math.PI/180);
+  bdx = spd * Math.cos(ang) * (Math.random()<0.5?1:-1);
+  bdy = -Math.abs(spd * Math.sin(ang));
+  launched = false;
+}
+
+function buildBricks(){
+  bricks=[];
+  const topPad = Math.round(H*0.08);
+  for(let r=0;r<BRICK_ROWS;r++){
+    for(let c=0;c<BRICK_COLS;c++){
+      bricks.push({
+        x: BRICK_PAD + c*(brickW+BRICK_PAD),
+        y: topPad + r*(brickH+BRICK_PAD),
+        w: brickW, h: brickH,
+        color: rowColors[r],
+        alive: true,
+        pts: (BRICK_ROWS-r)*10,
+      });
+    }
+  }
+}
+
+function newGame(){
+  score=0; lives=3; level=1;
+  gameOver=false; won=false; paused=false;
+  buildBricks();
+  resetBall();
+  updateHUD();
+  if(animId) cancelAnimationFrame(animId);
+  animId=requestAnimationFrame(loop);
+}
+
+function nextLevel(){
+  level++;
+  buildBricks();
+  resetBall();
+  updateHUD();
+}
+
+// ── Physics ────────────────────────────────────────
+const PADDLE_SPEED = 8;
+
+function loop(){
+  if(gameOver||paused){ animId=null; return; }
+
+  // Move paddle via keyboard
+  if(keysDown['ArrowLeft']||keysDown['KeyA']){
+    px = Math.max(0, px - PADDLE_SPEED);
+    if(!launched){ bx = px + pWidth/2; }
+  }
+  if(keysDown['ArrowRight']||keysDown['KeyD']){
+    px = Math.min(W - pWidth, px + PADDLE_SPEED);
+    if(!launched){ bx = px + pWidth/2; }
+  }
+
+  if(launched){
+    bx += bdx;
+    by += bdy;
+
+    // Wall collisions
+    if(bx - BALL_R < 0){ bx = BALL_R; bdx = Math.abs(bdx); }
+    if(bx + BALL_R > W){ bx = W-BALL_R; bdx = -Math.abs(bdx); }
+    if(by - BALL_R < 0){ by = BALL_R; bdy = Math.abs(bdy); }
+
+    // Paddle collision
+    if(by+BALL_R >= py && by-BALL_R <= py+PADDLE_H && bx >= px-BALL_R && bx <= px+pWidth+BALL_R && bdy>0){
+      by = py - BALL_R;
+      const rel = (bx - (px + pWidth/2)) / (pWidth/2);  // -1 to 1
+      const maxAngle = 65 * Math.PI/180;
+      const angle = rel * maxAngle;
+      const spd = Math.hypot(bdx,bdy);
+      bdx = spd * Math.sin(angle);
+      bdy = -Math.abs(spd * Math.cos(angle));
+    }
+
+    // Ball lost
+    if(by - BALL_R > H){
+      lives--;
+      updateHUD();
+      if(lives<=0){ gameOver=true; showOverlay(); animId=null; return; }
+      resetBall();
+    }
+
+    // Brick collisions
+    let aliveBricks=0;
+    for(const b of bricks){
+      if(!b.alive) continue;
+      aliveBricks++;
+      if(bx+BALL_R>b.x && bx-BALL_R<b.x+b.w && by+BALL_R>b.y && by-BALL_R<b.y+b.h){
+        b.alive=false;
+        aliveBricks--;
+        score+=b.pts;
+        updateHUD();
+        // Determine bounce direction
+        const overlapL=bx+BALL_R - b.x;
+        const overlapR=b.x+b.w - (bx-BALL_R);
+        const overlapT=by+BALL_R - b.y;
+        const overlapB=b.y+b.h - (by-BALL_R);
+        const minH=Math.min(overlapL,overlapR);
+        const minV=Math.min(overlapT,overlapB);
+        if(minH<minV) bdx=-bdx; else bdy=-bdy;
+        break;
+      }
+    }
+    if(aliveBricks===0){ nextLevel(); }
+  } else {
+    bx = px + pWidth/2;
+  }
+
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// ── Drawing ────────────────────────────────────────
+function drawRoundRect(x,y,w,h,r,fill){
+  ctx.fillStyle=fill;
+  ctx.beginPath();
+  ctx.roundRect(x,y,w,h,[r]);
+  ctx.fill();
+}
+
+function draw(){
+  ctx.fillStyle='#0f0f0f';
+  ctx.fillRect(0,0,W,H);
+
+  // Bricks
+  for(const b of bricks){
+    if(!b.alive) continue;
+    drawRoundRect(b.x,b.y,b.w,b.h,3,b.color);
+    ctx.fillStyle='rgba(255,255,255,0.18)';
+    ctx.fillRect(b.x+2,b.y+2,b.w-4,4);
+  }
+
+  // Paddle
+  const grad=ctx.createLinearGradient(px,py,px,py+PADDLE_H);
+  grad.addColorStop(0,'#c0c0e0');
+  grad.addColorStop(1,'#707090');
+  drawRoundRect(px,py,pWidth,PADDLE_H,4,grad);
+
+  // Ball
+  ctx.beginPath();
+  ctx.arc(bx,by,BALL_R,0,Math.PI*2);
+  ctx.fillStyle='#f8f8f8';
+  ctx.fill();
+  ctx.fillStyle='rgba(255,255,255,0.5)';
+  ctx.beginPath();
+  ctx.arc(bx-2,by-2,3,0,Math.PI*2);
+  ctx.fill();
+
+  // "Tap A to launch" hint
+  if(!launched){
+    ctx.fillStyle='rgba(255,255,255,0.4)';
+    ctx.font=`${Math.round(H*0.025)}px "Courier New"`;
+    ctx.textAlign='center';
+    ctx.fillText('TAP A TO LAUNCH',W/2,H*0.75);
+  }
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('level').textContent=level;
+  document.getElementById('lives').textContent=lives;
+}
+
+// ── Overlay ────────────────────────────────────────
+function showOverlay(){
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent='GAME OVER';
+  ov.querySelector('p').textContent=`Score: ${score}`;
+  ov.style.display='flex';
+}
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+// ── Controls ───────────────────────────────────────
+document.addEventListener('keydown',e=>{ keysDown[e.code]=true; if(e.code==='Space'||e.code==='KeyF'){ launch(); } });
+document.addEventListener('keyup',e=>{ delete keysDown[e.code]; });
+
+function launch(){ if(!launched){ launched=true; } }
+function movePaddleLeft(){  px=Math.max(0,px-PADDLE_SPEED*3); if(!launched){bx=px+pWidth/2;} }
+function movePaddleRight(){ px=Math.min(W-pWidth,px+PADDLE_SPEED*3); if(!launched){bx=px+pWidth/2;} }
+
+// Gamepad buttons
+let leftRepeat=null, rightRepeat=null;
+function startRepeat(fn){ fn(); return setInterval(fn,80); }
+
+const btnLeft  = document.getElementById('btn-left');
+const btnRight = document.getElementById('btn-right');
+const btnA     = document.getElementById('btn-a');
+
+btnLeft.addEventListener('touchstart', e=>{ e.preventDefault(); btnLeft.classList.add('pressed'); leftRepeat=startRepeat(movePaddleLeft); },{passive:false});
+btnLeft.addEventListener('touchend',   e=>{ e.preventDefault(); btnLeft.classList.remove('pressed'); clearInterval(leftRepeat); },{passive:false});
+btnLeft.addEventListener('mousedown',  ()=>{ leftRepeat=startRepeat(movePaddleLeft); });
+btnLeft.addEventListener('mouseup',    ()=>clearInterval(leftRepeat));
+
+btnRight.addEventListener('touchstart',e=>{ e.preventDefault(); btnRight.classList.add('pressed'); rightRepeat=startRepeat(movePaddleRight); },{passive:false});
+btnRight.addEventListener('touchend',  e=>{ e.preventDefault(); btnRight.classList.remove('pressed'); clearInterval(rightRepeat); },{passive:false});
+btnRight.addEventListener('mousedown', ()=>{ rightRepeat=startRepeat(movePaddleRight); });
+btnRight.addEventListener('mouseup',   ()=>clearInterval(rightRepeat));
+
+btnA.addEventListener('touchstart',e=>{ e.preventDefault(); btnA.classList.add('pressed'); launch(); },{passive:false});
+btnA.addEventListener('touchend',  e=>{ e.preventDefault(); btnA.classList.remove('pressed'); },{passive:false});
+btnA.addEventListener('mousedown', launch);
+
+// Touch-drag on canvas to move paddle
+let dragging=false;
+canvas.addEventListener('touchstart',e=>{ e.preventDefault(); dragging=true; movePaddleTouch(e.touches[0].clientX); },{passive:false});
+canvas.addEventListener('touchmove', e=>{ e.preventDefault(); if(dragging) movePaddleTouch(e.touches[0].clientX); },{passive:false});
+canvas.addEventListener('touchend',  e=>{ e.preventDefault(); dragging=false; },{passive:false});
+canvas.addEventListener('click',     e=>{ const r=canvas.getBoundingClientRect(); const cx=e.clientX-r.left; if(Math.abs(cx-(bx))<30&&!launched) launch(); });
+
+function movePaddleTouch(clientX){
+  const rect=canvas.getBoundingClientRect();
+  const x=clientX-rect.left;
+  px=Math.max(0,Math.min(W-pWidth, x-pWidth/2));
+  if(!launched) bx=px+pWidth/2;
+}
+
+// ── Init ───────────────────────────────────────────
+window.addEventListener('resize',()=>{ resize(); });
+resize();
+})();
+</script>
+</body>
+</html>

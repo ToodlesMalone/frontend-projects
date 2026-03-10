@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <title>TETRIS — NES Games</title>
+  <link rel="stylesheet" href="style.css"/>
+  <style>
+    #game-wrap { gap: 4px; }
+    #gamepad { flex-direction: column; gap: 8px; }
+    #menu-btns { display: flex; }
+    /* Tetris uses left/right/rotate(A)/drop(B) — hide up */
+    #btn-up { opacity: 0.25; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="overlay">
+  <h1>TETRIS</h1>
+  <p>Clear lines to score.<br/>Survive as long as you can!</p>
+  <button class="overlay-btn" id="overlay-btn">START GAME</button>
+  <a href="index.html" style="color:#888;font-size:12px;text-decoration:none;">← Back</a>
+</div>
+
+<div id="game-wrap">
+  <div id="hud">
+    <span><span class="label">score</span><span id="score">0</span></span>
+    <span><span class="label">level</span><span id="level">1</span></span>
+    <span><span class="label">lines</span><span id="lines">0</span></span>
+    <span><span class="label">next</span><canvas id="next-canvas" width="80" height="80"></canvas></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="gamepad">
+    <div id="menu-btns">
+      <button class="menu-btn" id="btn-pause">PAUSE</button>
+      <button class="menu-btn" id="btn-restart">RESTART</button>
+    </div>
+    <div style="display:flex;justify-content:space-between;width:100%;max-width:480px;padding:0 24px;">
+      <div id="dpad">
+        <div class="dpad-btn" id="btn-up">▲</div>
+        <div class="dpad-btn" id="btn-left">◄</div>
+        <div class="dpad-btn" id="btn-center"></div>
+        <div class="dpad-btn" id="btn-right">►</div>
+        <div class="dpad-btn" id="btn-down">▼</div>
+      </div>
+      <div id="action-btns">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <button class="action-btn" id="btn-b">ROT</button>
+          <span style="font-size:10px;color:#888;">B</span>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+          <button class="action-btn" id="btn-a">DROP</button>
+          <span style="font-size:10px;color:#888;">A</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+// ── Constants ──────────────────────────────────────
+const COLS = 10, ROWS = 20;
+const COLORS = [
+  null,
+  '#00f0f0', // I - cyan
+  '#0000f0', // J - blue
+  '#f0a000', // L - orange
+  '#f0f000', // O - yellow
+  '#00f000', // S - green
+  '#a000f0', // T - purple
+  '#f00000', // Z - red
+];
+
+const PIECES = [
+  [],
+  [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]], // I
+  [[2,0,0],[2,2,2],[0,0,0]],                  // J
+  [[0,0,3],[3,3,3],[0,0,0]],                  // L
+  [[4,4],[4,4]],                              // O
+  [[0,5,5],[5,5,0],[0,0,0]],                  // S
+  [[0,6,0],[6,6,6],[0,0,0]],                  // T
+  [[7,7,0],[0,7,7],[0,0,0]],                  // Z
+];
+
+// ── Canvas setup ───────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+const nextC  = document.getElementById('next-canvas');
+const nextCtx= nextC.getContext('2d');
+
+function resize(){
+  const avail = Math.min(window.innerWidth, 480);
+  const cellW = Math.floor((avail * 0.55) / COLS);
+  canvas.width  = cellW * COLS;
+  canvas.height = cellW * ROWS;
+  CELL = cellW;
+  draw();
+}
+let CELL = 28;
+
+// ── State ──────────────────────────────────────────
+let board, piece, pieceX, pieceY, pieceType, nextType;
+let score, level, linesCleared, gameOver, paused;
+let dropInterval, lastDrop;
+let animId;
+
+function newGame(){
+  board = Array.from({length:ROWS}, ()=>new Array(COLS).fill(0));
+  score = 0; level = 1; linesCleared = 0;
+  gameOver = false; paused = false;
+  nextType = randPiece();
+  spawnPiece();
+  updateHUD();
+  lastDrop = performance.now();
+  if(animId) cancelAnimationFrame(animId);
+  loop(performance.now());
+}
+
+function randPiece(){ return Math.floor(Math.random()*7)+1; }
+
+function spawnPiece(){
+  pieceType = nextType;
+  nextType  = randPiece();
+  piece  = PIECES[pieceType].map(r=>[...r]);
+  pieceX = Math.floor((COLS - piece[0].length)/2);
+  pieceY = 0;
+  if(collides(piece,pieceX,pieceY)){ gameOver=true; showOverlay(); }
+  drawNext();
+}
+
+function rotate(mat){
+  const N = mat.length;
+  return Array.from({length:N},(_,r)=>Array.from({length:N},(_,c)=>mat[N-1-c][r]));
+}
+
+function collides(mat,ox,oy){
+  for(let r=0;r<mat.length;r++)
+    for(let c=0;c<mat[r].length;c++)
+      if(mat[r][c]){
+        const nx=ox+c, ny=oy+r;
+        if(nx<0||nx>=COLS||ny>=ROWS) return true;
+        if(ny>=0 && board[ny][nx]) return true;
+      }
+  return false;
+}
+
+function lock(){
+  piece.forEach((row,r)=>row.forEach((v,c)=>{ if(v && pieceY+r>=0) board[pieceY+r][pieceX+c]=pieceType; }));
+  clearLines();
+  spawnPiece();
+}
+
+function clearLines(){
+  let cleared=0;
+  for(let r=ROWS-1;r>=0;r--){
+    if(board[r].every(v=>v)){
+      board.splice(r,1);
+      board.unshift(new Array(COLS).fill(0));
+      cleared++; r++;
+    }
+  }
+  if(cleared){
+    const pts=[0,100,300,500,800];
+    score += (pts[cleared]||1200)*level;
+    linesCleared += cleared;
+    level = Math.floor(linesCleared/10)+1;
+    updateHUD();
+  }
+}
+
+function dropSpeed(){ return Math.max(100, 1000 - (level-1)*80); }
+
+function loop(ts){
+  if(gameOver||paused){ animId=null; return; }
+  if(ts - lastDrop >= dropSpeed()){
+    if(!collides(piece,pieceX,pieceY+1)) pieceY++;
+    else lock();
+    lastDrop=ts;
+  }
+  draw();
+  animId = requestAnimationFrame(loop);
+}
+
+// ── Drawing ────────────────────────────────────────
+function drawCell(c2d,x,y,color,cellSize){
+  c2d.fillStyle = color;
+  c2d.fillRect(x*cellSize+1,y*cellSize+1,cellSize-2,cellSize-2);
+  c2d.fillStyle='rgba(255,255,255,0.15)';
+  c2d.fillRect(x*cellSize+1,y*cellSize+1,cellSize-2,4);
+}
+
+function draw(){
+  ctx.fillStyle='#0f0f0f';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // grid lines
+  ctx.strokeStyle='#1a1a2e';
+  ctx.lineWidth=0.5;
+  for(let r=0;r<ROWS;r++){ ctx.beginPath();ctx.moveTo(0,r*CELL);ctx.lineTo(canvas.width,r*CELL);ctx.stroke(); }
+  for(let c=0;c<COLS;c++){ ctx.beginPath();ctx.moveTo(c*CELL,0);ctx.lineTo(c*CELL,canvas.height);ctx.stroke(); }
+
+  // board
+  board.forEach((row,r)=>row.forEach((v,c)=>{ if(v) drawCell(ctx,c,r,COLORS[v],CELL); }));
+
+  // ghost piece
+  let ghostY=pieceY;
+  while(!collides(piece,pieceX,ghostY+1)) ghostY++;
+  if(ghostY!==pieceY){
+    piece.forEach((row,r)=>row.forEach((v,c)=>{ if(v){ ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect((pieceX+c)*CELL+1,(ghostY+r)*CELL+1,CELL-2,CELL-2); } }));
+  }
+
+  // active piece
+  piece.forEach((row,r)=>row.forEach((v,c)=>{ if(v) drawCell(ctx,pieceX+c,pieceY+r,COLORS[v],CELL); }));
+}
+
+function drawNext(){
+  nextCtx.fillStyle='#0f0f0f';
+  nextCtx.fillRect(0,0,80,80);
+  const mat=PIECES[nextType];
+  const off=Math.floor((4-mat[0].length)/2);
+  const cell=16;
+  mat.forEach((row,r)=>row.forEach((v,c)=>{ if(v) drawCell(nextCtx,c+off,r+off,COLORS[nextType],cell); }));
+}
+
+function updateHUD(){
+  document.getElementById('score').textContent=score;
+  document.getElementById('level').textContent=level;
+  document.getElementById('lines').textContent=linesCleared;
+}
+
+// ── Overlay ────────────────────────────────────────
+function showOverlay(){
+  const ov=document.getElementById('overlay');
+  ov.querySelector('h1').textContent= gameOver?'GAME OVER':'TETRIS';
+  ov.querySelector('p').textContent = gameOver?`Score: ${score}\nLevel: ${level}`:'Clear lines to score.\nSurvive as long as you can!';
+  ov.style.display='flex';
+}
+document.getElementById('overlay-btn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  newGame();
+});
+
+// ── Controls ───────────────────────────────────────
+function moveLeft(){  if(!collides(piece,pieceX-1,pieceY)) pieceX--; draw(); }
+function moveRight(){ if(!collides(piece,pieceX+1,pieceY)) pieceX++; draw(); }
+function moveDown(){  if(!collides(piece,pieceX,pieceY+1)) { pieceY++; score+=1; updateHUD(); } else lock(); draw(); }
+function rotatePiece(){ const r=rotate(piece); if(!collides(r,pieceX,pieceY)){ piece=r; } else if(!collides(r,pieceX+1,pieceY)){ piece=r;pieceX++; } else if(!collides(r,pieceX-1,pieceY)){ piece=r;pieceX--; } draw(); }
+function hardDrop(){ while(!collides(piece,pieceX,pieceY+1)){ pieceY++; score+=2; } lock(); updateHUD(); draw(); }
+
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(gameOver||paused) return;
+  switch(e.code){
+    case 'ArrowLeft':  moveLeft();  break;
+    case 'ArrowRight': moveRight(); break;
+    case 'ArrowDown':  moveDown();  break;
+    case 'ArrowUp':    rotatePiece();break;
+    case 'Space':      hardDrop();  break;
+    case 'KeyP':       togglePause();break;
+  }
+});
+
+// Virtual gamepad
+function addBtn(id,fn){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{ e.preventDefault(); el.classList.add('pressed'); fn(); },{passive:false});
+  el.addEventListener('touchend',e=>{ e.preventDefault(); el.classList.remove('pressed'); },{passive:false});
+  el.addEventListener('mousedown',fn);
+}
+
+let repeatTimer=null;
+function addRepeat(id,fn,delay=120){
+  const el=document.getElementById(id);
+  el.addEventListener('touchstart',e=>{
+    e.preventDefault(); el.classList.add('pressed');
+    fn();
+    repeatTimer=setInterval(fn,delay);
+  },{passive:false});
+  const stop=()=>{ el.classList.remove('pressed'); clearInterval(repeatTimer); };
+  el.addEventListener('touchend',e=>{ e.preventDefault(); stop(); },{passive:false});
+  el.addEventListener('mousedown',()=>{ fn(); repeatTimer=setInterval(fn,delay); });
+  el.addEventListener('mouseup',stop);
+}
+
+addRepeat('btn-left', ()=>{ if(!gameOver&&!paused) moveLeft(); });
+addRepeat('btn-right',()=>{ if(!gameOver&&!paused) moveRight(); });
+addRepeat('btn-down', ()=>{ if(!gameOver&&!paused) moveDown(); },80);
+addBtn('btn-b', ()=>{ if(!gameOver&&!paused) rotatePiece(); });
+addBtn('btn-a', ()=>{ if(!gameOver&&!paused) hardDrop(); });
+
+// Swipe gestures on canvas
+let touchStartX, touchStartY;
+canvas.addEventListener('touchstart',e=>{ e.preventDefault(); touchStartX=e.touches[0].clientX; touchStartY=e.touches[0].clientY; },{passive:false});
+canvas.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const dx=e.changedTouches[0].clientX-touchStartX;
+  const dy=e.changedTouches[0].clientY-touchStartY;
+  if(Math.abs(dx)>Math.abs(dy)){
+    if(Math.abs(dx)>20){ dx>0?moveRight():moveLeft(); }
+  } else {
+    if(dy>30) hardDrop();
+    else if(dy<-20) rotatePiece();
+  }
+},{passive:false});
+
+function togglePause(){
+  if(gameOver) return;
+  paused=!paused;
+  document.getElementById('btn-pause').textContent=paused?'RESUME':'PAUSE';
+  if(!paused){ lastDrop=performance.now(); loop(lastDrop); }
+}
+
+document.getElementById('btn-pause').addEventListener('click',togglePause);
+document.getElementById('btn-restart').addEventListener('click',newGame);
+
+// ── Init ───────────────────────────────────────────
+window.addEventListener('resize',resize);
+resize();
+})();
+</script>
+</body>
+</html>
