@@ -199,6 +199,7 @@ for (let layer = 0; layer < 2; layer++) {
 }
 // blood moon
 const MOON_POS = V3(40, 150, -230);
+let moonGlowSprite;
 {
   const tex = canvasTex(128, (ctx, s) => {
     ctx.fillStyle = '#c33018'; ctx.fillRect(0, 0, s, s);
@@ -225,6 +226,7 @@ const MOON_POS = V3(40, 150, -230);
   glow.position.copy(MOON_POS);
   glow.scale.setScalar(120);
   scene.add(glow);
+  moonGlowSprite = glow;
 }
 // Orion (top-left of the poster)
 const ORION_POS = V3(-250, 190, -230);
@@ -616,6 +618,8 @@ const CLEARINGS = [   // landmark spots scatter must keep clear: {x, z, r(option
   { x: -60, z: 60, r: 10 },        // Bevo's meadow
   { x: 78, z: 8, r: 11 },          // Winnie's den
   { x: 34, z: 62, r: 7 },          // the Bronco's trailhead
+  { x: -66, z: -6, r: 18 },        // the vineyard
+  { x: 19, z: 26, r: 5 },          // canoe landing
 ];
 function scatterOK(x, z, buffer = 5) {
   if (Math.abs(x - riverX(z)) < 13) return false;
@@ -1435,7 +1439,8 @@ let winnie, winnieTail, winnieWag = 0;
 }
 
 // ------------------------------------------ the Green Bronco (drivable!)
-const vehicle = { on: false, speed: 0, yaw: -0.9, x: 34, z: 62 };
+const vehicle = { kind: 'bronco', speed: 0, yaw: -0.9, x: 34, z: 62 };
+let activeV = null; // currently driven vehicle (vehicle | canoeState | null)
 let broncoGrp, broncoWheels = [], broncoLights = [], broncoLightMeshes = [];
 const broncoCollider = { x: 34, z: 62, r: 1.8 };
 {
@@ -1513,6 +1518,211 @@ const broncoCollider = { x: 34, z: 62, r: 1.8 };
   colliders.push(broncoCollider);
 }
 
+// ----------------------------------------------- the canoe (paddle the Blanco)
+const canoeState = { kind: 'canoe', speed: 0, yaw: 2.4, x: 19, z: 26 };
+let canoeGrp, canoePaddle;
+const canoeCollider = { x: 19, z: 26, r: 1.4 };
+{
+  const grp = new THREE.Group();
+  const hull = new THREE.Mesh(mergeGeoms([
+    { g: new THREE.BoxGeometry(0.9, 0.4, 3.1), m: M4(0, 0.3, 0), c: 0x8a4a2a },
+    { g: new THREE.BoxGeometry(0.62, 0.3, 2.7), m: M4(0, 0.44, 0), c: 0x2c1d12 },  // cockpit
+    { g: new THREE.BoxGeometry(0.5, 0.35, 0.5), m: M4(0, 0.42, 1.62, 0.5, 0, 0), c: 0x9a5632 }, // bow
+    { g: new THREE.BoxGeometry(0.5, 0.35, 0.5), m: M4(0, 0.42, -1.62, -0.5, 0, 0), c: 0x9a5632 },
+    { g: new THREE.BoxGeometry(0.86, 0.08, 0.3), m: M4(0, 0.5, -0.4), c: 0xb5824e },  // seat
+  ]), matFlat);
+  grp.add(hull);
+  canoePaddle = new THREE.Mesh(mergeGeoms([
+    { g: new THREE.CylinderGeometry(0.035, 0.035, 1.5, 5), m: M4(0, 0, 0, 0, 0, Math.PI / 2), c: 0xb5824e },
+    { g: new THREE.BoxGeometry(0.3, 0.02, 0.24), m: M4(0.75, 0, 0), c: 0x8a5a32 },
+    { g: new THREE.BoxGeometry(0.3, 0.02, 0.24), m: M4(-0.75, 0, 0), c: 0x8a5a32 },
+  ]), matFlat);
+  canoePaddle.position.set(0, 0.75, -0.3);
+  grp.add(canoePaddle);
+  grp.position.set(canoeState.x, Math.max(terrainH(canoeState.x, canoeState.z), WATER_Y - 0.1), canoeState.z);
+  grp.rotation.y = canoeState.yaw;
+  scene.add(grp);
+  canoeGrp = grp;
+  colliders.push(canoeCollider);
+}
+
+// shared soft radial glow for pickups
+const softGlowTex = canvasTex(64, (ctx, s) => {
+  const g = ctx.createRadialGradient(s / 2, s / 2, 2, s / 2, s / 2, s / 2);
+  g.addColorStop(0, 'rgba(255,255,255,0.9)');
+  g.addColorStop(0.4, 'rgba(255,255,255,0.3)');
+  g.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, s, s);
+});
+
+// --------------------------------------------------- the Hill Country vineyard
+const VINEYARD = { x: -66, z: -8 };
+let wineGlass, wineGlow, wineRespawn = 0;
+{
+  const rows = [-73, -68.5, -64, -59.5];
+  for (const rx of rows) {
+    const parts = [];
+    for (let z = -18; z <= 4; z += 5.5) {
+      const h = terrainH(rx, z) - terrainH(rx, -7); // relative post height offset
+      parts.push({ g: new THREE.CylinderGeometry(0.07, 0.09, 1.7, 5), m: M4(0, h + 0.85, z + 7), c: 0x4a3320 });
+    }
+    for (const wy of [0.75, 1.25]) // trellis wires
+      parts.push({ g: new THREE.BoxGeometry(0.03, 0.03, 23), m: M4(0, wy, -0.5 + 7 - 7 + 4.5), c: 0x2c2018 });
+    // leafy vine masses + grape clusters
+    for (let z = -17; z <= 4; z += 1.9) {
+      const h = terrainH(rx, z) - terrainH(rx, -7);
+      parts.push({ g: new THREE.IcosahedronGeometry(0.55, 0), m: M4(rand(-0.15, 0.15), h + rand(0.9, 1.3), z + 7, rand(0, 3), rand(0, 3), 0, 1, rand(0.6, 0.9), 0.8), c: [0x2e4a26, 0x3a5a2e, 0x27401f][randi(0, 2)] });
+      if (Math.random() < 0.6) {
+        const gy = h + rand(0.55, 0.8);
+        for (let g = 0; g < 3; g++)
+          parts.push({ g: new THREE.SphereGeometry(0.07, 5, 4), m: M4(rand(-0.12, 0.12), gy - g * 0.07, z + 7 + rand(-0.1, 0.1)), c: 0x4a2050 });
+      }
+    }
+    const row = new THREE.Mesh(mergeGeoms(parts), matFlat);
+    row.position.set(rx, terrainH(rx, -7), -14); // rows run z -14..+9 in world
+    scene.add(row);
+    for (let z = -12; z <= 8; z += 4) addCollider(rx, z, 1.0);
+  }
+  // the winemaker's barrel, with something red on top…
+  const barrel = new THREE.Mesh(mergeGeoms([
+    { g: new THREE.CylinderGeometry(0.55, 0.55, 1.1, 9), m: M4(0, 0.55, 0), c: 0x5c4226 },
+    { g: new THREE.TorusGeometry(0.56, 0.045, 5, 10), m: M4(0, 0.3, 0, Math.PI / 2, 0, 0), c: 0x2c2018 },
+    { g: new THREE.TorusGeometry(0.56, 0.045, 5, 10), m: M4(0, 0.8, 0, Math.PI / 2, 0, 0), c: 0x2c2018 },
+  ]), matFlat);
+  barrel.position.set(-68, terrainH(-68, 10), 10);
+  scene.add(barrel);
+  addCollider(-68, 10, 0.8);
+  wineGlass = new THREE.Group();
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xc8c2b8, transparent: true, opacity: 0.45, roughness: 0.2 });
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.06, 0.16, 6), glassMat);
+  stem.position.y = 0.08;
+  wineGlass.add(stem);
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.05, 0.18, 8), glassMat);
+  bowl.position.y = 0.25;
+  wineGlass.add(bowl);
+  const wine = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.05, 0.12, 8),
+    new THREE.MeshBasicMaterial({ color: 0x8a1030 }));
+  wine.position.y = 0.22;
+  wineGlass.add(wine);
+  wineGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: softGlowTex, color: 0xd83060, transparent: true, opacity: 0.5, depthWrite: false }));
+  wineGlow.scale.setScalar(0.9);
+  wineGlow.position.y = 0.3;
+  wineGlass.add(wineGlow);
+  wineGlass.position.set(-68, terrainH(-68, 10) + 1.12, 10);
+  scene.add(wineGlass);
+}
+
+// --------------------------------- lost tiki mugs (return them to the grotto)
+const mugSpots = [
+  { x: riverX(-52) + 8, z: -50 },   // by the arch's east pillar
+  { x: 98, z: 44 },                 // top of the mesa trail
+  { x: 38, z: 18.5 },               // behind the dead oak
+  { x: 6, z: -82 },                 // the carving alcove
+  { x: -66, z: 54 },                // edge of Bevo's meadow
+];
+const mugs = [];
+const mugColorsLost = [0x7dff9a, 0xffb347, 0xff6a55, 0x5fd8ff, 0xff8ad8];
+const shelfMugs = [];
+{
+  for (let i = 0; i < mugSpots.length; i++) {
+    const s = mugSpots[i];
+    const grp = new THREE.Group();
+    const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.34, 6),
+      new THREE.MeshBasicMaterial({ color: mugColorsLost[i] }));
+    mug.position.y = 0.2;
+    grp.add(mug);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: softGlowTex, color: mugColorsLost[i], transparent: true, opacity: 0.4, depthWrite: false }));
+    glow.scale.setScalar(1.1);
+    glow.position.y = 0.3;
+    grp.add(glow);
+    grp.position.set(s.x, terrainH(s.x, s.z), s.z);
+    scene.add(grp);
+    mugs.push({ grp, x: s.x, z: s.z, got: false });
+    // its future home on the grotto's bar top (hidden until returned)
+    const home = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.11, 0.34, 6),
+      new THREE.MeshBasicMaterial({ color: mugColorsLost[i] }));
+    home.position.set(GROTTO.x - 3.9, terrainH(GROTTO.x, GROTTO.z) + 1.35, GROTTO.z - 2 + i);
+    home.visible = false;
+    scene.add(home);
+    shelfMugs.push(home);
+  }
+}
+
+// ------------------------------ Trader Blanco (appears when the canyon is done)
+let trader, traderTalked = false;
+{
+  const grp = new THREE.Group();
+  const aloha = canvasTex(32, (ctx, s) => {
+    ctx.fillStyle = '#a83a2a'; ctx.fillRect(0, 0, s, s);
+    ctx.fillStyle = '#e8cf8a';
+    for (let i = 0; i < 8; i++) {
+      const x = rand(2, 28), y = rand(2, 28);
+      for (let p = 0; p < 5; p++) ctx.fillRect(x + Math.cos(p * 1.26) * 2.5, y + Math.sin(p * 1.26) * 2.5, 2, 2);
+    }
+  });
+  const shirtMat = new THREE.MeshStandardMaterial({ map: aloha, flatShading: true, roughness: 1 });
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x8a6534, flatShading: true, roughness: 1 });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.55, 0.36), shirtMat);
+  torso.position.y = 0.78;
+  grp.add(torso);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.4), woodMat);
+  head.position.y = 1.32;
+  grp.add(head);
+  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.1, 0.1),
+    new THREE.MeshStandardMaterial({ color: 0x241505, flatShading: true }));
+  brow.position.set(0, 1.44, 0.2);
+  grp.add(brow);
+  for (const s of [-1, 1]) {
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.09, 0.03),
+      new THREE.MeshBasicMaterial({ color: 0xf2e2b8 }));
+    eye.position.set(s * 0.12, 1.34, 0.21);
+    grp.add(eye);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.42, 0.14), shirtMat);
+    arm.position.set(s * 0.38, 0.82, 0);
+    grp.add(arm);
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.5, 0.18),
+      new THREE.MeshStandardMaterial({ color: 0x3c2c1a, flatShading: true }));
+    leg.position.set(s * 0.14, 0.25, 0);
+    grp.add(leg);
+  }
+  const shaker = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.24, 7),
+    new THREE.MeshStandardMaterial({ color: 0xb8b0a0, flatShading: true, roughness: 0.4 }));
+  shaker.position.set(0.38, 1.1, 0.12);
+  grp.add(shaker);
+  const crown = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.12, 0.42),
+    new THREE.MeshStandardMaterial({ color: 0x6b4c24, flatShading: true }));
+  crown.position.y = 1.62;
+  grp.add(crown);
+  grp.position.set(GROTTO.x - 5.4, terrainH(GROTTO.x, GROTTO.z), GROTTO.z);
+  grp.rotation.y = Math.PI / 2; // faces the doorway from behind the bar
+  grp.visible = false;
+  scene.add(grp);
+  trader = grp;
+}
+
+// carved drink menu on the grotto wall
+{
+  const menuTex = canvasTex(256, (ctx, s) => {
+    ctx.fillStyle = '#5c4226'; ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(40,22,8,0.5)'; ctx.lineWidth = 2;
+    for (let i = 0; i < 8; i++) { ctx.beginPath(); ctx.moveTo(0, 8 + i * 32); ctx.lineTo(s, 10 + i * 32); ctx.stroke(); }
+    ctx.fillStyle = '#f2e2b8'; ctx.textAlign = 'center';
+    ctx.font = 'bold 24px Georgia, serif';
+    ctx.fillText('BLOOD MOON MENU', s / 2, 36);
+    ctx.font = 'italic 16px Georgia, serif';
+    const items = ['Blood Moon Punch ... 9', 'Chupacabra Colada ... 11', 'Armadillo Mai Tai ... 10',
+      "Watcher's Old Fashioned ... 13", 'Bigfoot Banana Batida ... 8', "Wynonna's Water Bowl ... free"];
+    items.forEach((it, i) => ctx.fillText(it, s / 2, 78 + i * 30));
+  });
+  const plank = new THREE.Mesh(new THREE.BoxGeometry(2.6, 2.6, 0.1),
+    new THREE.MeshStandardMaterial({ map: menuTex, roughness: 1 }));
+  plank.position.set(GROTTO.x - 6.2, terrainH(GROTTO.x, GROTTO.z) + 3.6, GROTTO.z - 4.6);
+  plank.rotation.y = Math.PI / 3;
+  scene.add(plank);
+}
+
 // -------------------------------------------------- atmosphere particles
 // fireflies along the riverbanks
 let fireflies;
@@ -1573,9 +1783,10 @@ const dusts = [];
     dusts.push(sp);
   }
 }
-function spawnDust(x, y, z) {
+function spawnDust(x, y, z, color = 0xffffff) {
   const d = dusts.find(q => q.userData.age > 0.5) || dusts[0];
   d.userData.age = 0;
+  d.material.color.setHex(color);
   d.position.set(x + rand(-0.2, 0.2), y + 0.15, z + rand(-0.2, 0.2));
 }
 // one cloud pinned high so it periodically crosses the blood moon
@@ -1711,6 +1922,15 @@ const pois = [
   { id: 'chupacabra', name: 'The Chupacabra', dynamic: 'chupacabra', r: 4.5, my: 1.8,
     hint: 'Red eyes blink in the far southeast.',
     text: 'The goat-sucker of legend — spines, hide, and hunger. It took one look at you and decided dinner wasn’t worth the paperwork.' },
+  { id: 'vineyard', name: 'The Vineyard', x: VINEYARD.x, z: VINEYARD.z, r: 6.5, my: 4,
+    hint: 'Rows of something green grow northwest.',
+    text: 'Tempranillo under a blood moon. Texas wine country runs deep out here — and somebody has been tending these rows by moonlight.' },
+  { id: 'wine', name: 'The Winemaker’s Glass', x: -68, z: 10, r: 0, my: 2, secret: true,
+    hint: 'Something red waits among the vines. Drink up.',
+    text: 'A glass of Blood Moon Red, still cool. Notes of cherry, cedar smoke, and unwise confidence. Your legs feel faster already.' },
+  { id: 'canoe', name: 'The Canoe', x: 19, z: 26, r: 3.5, my: 2.5,
+    hint: 'Something wooden waits at the water’s edge.',
+    text: 'A cedar-strip canoe, beached by the crossing. The river runs the whole canyon if you’ve got the arms for it.' },
   { id: 'bronco', name: 'The Green Bronco', x: 34, z: 62, r: 4.5, my: 3.8,
     hint: 'Parked at the trailhead. Keys in the visor.',
     text: 'Hill Country green, blackout steelies, and the good stripes. Keys are in the visor — Trader Blanco won’t mind. Mind the cacti.' },
@@ -1788,9 +2008,35 @@ function refreshGuide() {
     li.innerHTML = `<span class="dot">${isFound ? '✓' : '○'}</span><span>${label}</span>`;
     ul.appendChild(li);
   }
+  $('guideFoot').textContent =
+    `Mugs returned: ${mugCount}/5 · Fish caught: ${fish.tally}` +
+    (fish.legend ? ' (incl. the Legendary Bass)' : '') +
+    ' · Best run: ' + (runBest ? fmtTime(runBest) : '—');
 }
 function saveGame() {
   try { localStorage.setItem('tikiblanco-save', JSON.stringify(Object.keys(found))); } catch (e) { /* private mode */ }
+}
+function saveExtras() {
+  try {
+    localStorage.setItem('tikiblanco-extras', JSON.stringify({
+      mugs: mugs.map(m => m.got), fish: fish.tally, legend: fish.legend, best: runBest }));
+  } catch (e) { /* private mode */ }
+}
+function loadExtras() {
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem('tikiblanco-extras') || 'null'); } catch (e) { d = null; }
+  if (!d) return;
+  if (Array.isArray(d.mugs)) d.mugs.forEach((got, i) => {
+    if (got && mugs[i] && !mugs[i].got) {
+      mugs[i].got = true;
+      mugs[i].grp.visible = false;
+      shelfMugs[i].visible = true;
+      mugCount++;
+    }
+  });
+  fish.tally = d.fish || 0;
+  fish.legend = !!d.legend;
+  runBest = d.best || null;
 }
 function loadSave() {
   let ids = [];
@@ -1811,7 +2057,10 @@ function loadSave() {
 $('counter').addEventListener('click', () => { refreshGuide(); $('guide').classList.add('show'); });
 $('guideClose').addEventListener('click', () => $('guide').classList.remove('show'));
 $('guideReset').addEventListener('click', () => {
-  try { localStorage.removeItem('tikiblanco-save'); } catch (e) { /* ignore */ }
+  try {
+    localStorage.removeItem('tikiblanco-save');
+    localStorage.removeItem('tikiblanco-extras');
+  } catch (e) { /* ignore */ }
   location.reload();
 });
 $('complete').addEventListener('click', () => $('complete').classList.remove('show'));
@@ -2101,12 +2350,46 @@ const MusicPlayer = {
     this.running = true;
     this.playTrack();
   },
+  ensureGraph() {
+    if (this.dry || !AudioEngine.ctx) return;
+    const ctx = AudioEngine.ctx;
+    this.dry = ctx.createGain(); this.dry.gain.value = 1;
+    this.dry.connect(AudioEngine.master);
+    this.bp = ctx.createBiquadFilter();
+    this.bp.type = 'bandpass'; this.bp.frequency.value = 1450; this.bp.Q.value = 1.5;
+    this.radioG = ctx.createGain(); this.radioG.gain.value = 0;
+    this.bp.connect(this.radioG); this.radioG.connect(AudioEngine.master);
+  },
   playTrack() {
     const a = this.audio = new Audio(this.tracks[this.idx]);
     a.volume = AudioEngine.muted ? 0 : 0.3;
     a.addEventListener('ended', () => this.interlude());
     a.addEventListener('error', () => this.interlude());
+    this.ensureGraph();
+    if (this.dry) {
+      try { // route through the mixer so the Bronco's radio can color it
+        const src = AudioEngine.ctx.createMediaElementSource(a);
+        src.connect(this.dry);
+        src.connect(this.bp);
+        a.volume = 0.3; // mute handled by the master bus once routed
+      } catch (e) { /* cross-origin or reused element: plain playback */ }
+    }
     a.play().catch(() => { /* resumes on next user gesture via ctx */ });
+  },
+  // KTKI Blanco FM — squeezes the song through the dash speaker
+  setRadio(on) {
+    this.ensureGraph();
+    if (!this.dry) return;
+    const t = AudioEngine.ctx.currentTime;
+    this.dry.gain.cancelScheduledValues(t);
+    this.radioG.gain.cancelScheduledValues(t);
+    this.dry.gain.linearRampToValueAtTime(on ? 0.12 : 1, t + 0.7);
+    this.radioG.gain.linearRampToValueAtTime(on ? 2.4 : 0, t + 0.7);
+    if (on && !AudioEngine.muted) { // station ident stinger
+      AudioEngine.pluck(880, 0.07);
+      setTimeout(() => AudioEngine.pluck(1108, 0.07), 150);
+      setTimeout(() => AudioEngine.pluck(1318, 0.09), 300);
+    }
   },
   interlude() {
     this.audio = null;
@@ -2186,6 +2469,9 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Space') { jumpQueued = true; e.preventDefault(); }
   if (e.code === 'KeyE') toggleDrive();
+  if (e.code === 'KeyR') throwStick();
+  if (e.code === 'KeyF') fishPress();
+  if (e.code === 'KeyP') takePhoto();
 });
 addEventListener('keyup', e => keys[e.code] = false);
 
@@ -2207,7 +2493,7 @@ const stickEl = $('stick'), knobEl = $('stickKnob');
 addEventListener('touchstart', e => {
   document.body.classList.add('touch');
   for (const t of e.changedTouches) {
-    if (t.target.closest && t.target.closest('#jumpBtn,#driveBtn,#counter,#muteBtn,#popup,#guide,#complete,#title')) continue;
+    if (t.target.closest && t.target.closest('#jumpBtn,#driveBtn,#fishBtn,#fetchBtn,#photoBtn,#counter,#muteBtn,#popup,#guide,#complete,#title')) continue;
     if (t.clientX < innerWidth * 0.45 && joy.id === null) {
       joy.id = t.identifier; joy.ox = t.clientX; joy.oy = t.clientY; joy.x = joy.y = 0;
       stickEl.style.display = 'block';
@@ -2244,16 +2530,19 @@ addEventListener('touchend', e => {
 });
 $('jumpBtn').addEventListener('touchstart', e => { e.preventDefault(); jumpQueued = true; }, { passive: false });
 
-// climb in / hop out of the Bronco
+// climb in / hop out of the Bronco or the canoe
 function toggleDrive() {
   if (!started || cine || intro) return;
-  if (vehicle.on) {
-    vehicle.on = false;
-    vehicle.speed = 0;
-    AudioEngine.engineStop();
-    for (const l of broncoLights) l.intensity = 0;
-    for (const m of broncoLightMeshes) m.material.color.setHex(0x554d33);
-    const sx = vehicle.x + Math.cos(vehicle.yaw) * 2.0, sz = vehicle.z - Math.sin(vehicle.yaw) * 2.0;
+  if (activeV) {
+    const V = activeV;
+    V.speed = 0;
+    if (V.kind === 'bronco') {
+      AudioEngine.engineStop();
+      MusicPlayer.setRadio(false);
+      for (const l of broncoLights) l.intensity = 0;
+      for (const m of broncoLightMeshes) m.material.color.setHex(0x554d33);
+    }
+    const sx = V.x + Math.cos(V.yaw) * 2.0, sz = V.z - Math.sin(V.yaw) * 2.0;
     player.pos.set(sx, Math.max(terrainH(sx, sz), WATER_Y - 0.55), sz);
     player.vel.y = 0;
     pGroup.visible = true;
@@ -2262,20 +2551,123 @@ function toggleDrive() {
       wyn.visible = true;
       wyn.position.set(sx + 1, player.pos.y, sz + 1);
     }
+    activeV = null;
   } else {
-    if (Math.hypot(player.pos.x - vehicle.x, player.pos.z - vehicle.z) > 4.5) return;
-    vehicle.on = true;
-    AudioEngine.engineStart();
-    for (const l of broncoLights) l.intensity = 12;
-    for (const m of broncoLightMeshes) m.material.color.setHex(0xffedb0);
+    const dB = Math.hypot(player.pos.x - vehicle.x, player.pos.z - vehicle.z);
+    const dC = Math.hypot(player.pos.x - canoeState.x, player.pos.z - canoeState.z);
+    if (Math.min(dB, dC) > 4.5) return;
+    activeV = dB <= dC ? vehicle : canoeState;
+    if (activeV.kind === 'bronco') {
+      AudioEngine.engineStart();
+      MusicPlayer.setRadio(true);
+      for (const l of broncoLights) l.intensity = 12;
+      for (const m of broncoLightMeshes) m.material.color.setHex(0xffedb0);
+    }
     pGroup.visible = false;
     pShadow.visible = false;
     if (wynState === 'follow') wyn.visible = false; // she rides shotgun
   }
-  $('driveBtn').textContent = vehicle.on ? 'EXIT' : 'DRIVE';
+  $('driveBtn').textContent = activeV ? 'EXIT' : 'DRIVE';
 }
 $('driveBtn').addEventListener('click', toggleDrive);
 $('driveBtn').addEventListener('touchstart', e => { e.preventDefault(); toggleDrive(); }, { passive: false });
+
+// -------- fetch with Wynonna
+function throwStick() {
+  if (!started || activeV || cine || intro || wynState !== 'follow') return;
+  if (stick && stick.state !== 'held') return;
+  if (!stick) {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.05, 0.75, 5),
+      new THREE.MeshStandardMaterial({ color: 0x6b4a26, flatShading: true, roughness: 1 }));
+    scene.add(m);
+    stick = { mesh: m, state: 'held', vel: V3() };
+  }
+  stick.state = 'flying';
+  stick.mesh.visible = true;
+  stick.mesh.position.set(player.pos.x, player.pos.y + 1.2, player.pos.z);
+  const fx = -Math.sin(cam.yaw), fz = -Math.cos(cam.yaw);
+  stick.vel.set(fx * 11, 5.5, fz * 11);
+  AudioEngine.boing();
+}
+$('fetchBtn').addEventListener('click', throwStick);
+$('fetchBtn').addEventListener('touchstart', e => { e.preventDefault(); throwStick(); }, { passive: false });
+
+// -------- fishing the Blanco
+function fishPress() {
+  if (!started || activeV || cine || intro || player.swim) return;
+  if (fish.state === 'idle') {
+    const d = Math.abs(player.pos.x - riverX(player.pos.z));
+    if (d > 14 || d < 4) return;
+    fish.state = 'cast';
+    fish.t = 0;
+    fish.from.set(player.pos.x, player.pos.y + 1.1, player.pos.z);
+    const side = player.pos.x > riverX(player.pos.z) ? 1 : -1;
+    fish.to.set(riverX(player.pos.z) + side * rand(-1, 2.5), WATER_Y + 0.05, player.pos.z + rand(-2.5, 2.5));
+    fish.anchor = V3(player.pos.x, 0, player.pos.z);
+    fishBobber.visible = true;
+    fishLine.visible = true;
+  } else if (fish.state === 'bite') {
+    const roll = Math.random();
+    const name = roll < 0.08 ? 'the LEGENDARY Guadalupe Bass'
+      : roll < 0.32 ? 'a Guadalupe Bass'
+      : roll < 0.52 ? 'a Channel Catfish'
+      : roll < 0.72 ? 'a Rio Grande Cichlid'
+      : roll < 0.92 ? 'a Redbreast Sunfish' : 'a very old boot';
+    fish.tally++;
+    if (roll < 0.08) fish.legend = true;
+    showPopup('Fish On!', `You caught ${name}. The river provides. (${fish.tally} caught)`, 'The Blanco Provides', 4500);
+    if (roll < 0.08) AudioEngine.fanfare(); else AudioEngine.chime();
+    if (wynState === 'follow') { wynWag = 2.5; AudioEngine.yip(); }
+    saveExtras();
+    endFishing();
+  } else {
+    endFishing(); // reel in
+  }
+}
+function endFishing() {
+  fish.state = 'idle';
+  fishBobber.visible = false;
+  fishLine.visible = false;
+}
+$('fishBtn').addEventListener('click', fishPress);
+$('fishBtn').addEventListener('touchstart', e => { e.preventDefault(); fishPress(); }, { passive: false });
+
+// -------- photo mode: framed like the poster, saved as a PNG
+function takePhoto() {
+  if (!started) return;
+  dismissPopup();
+  renderer.render(scene, camera);
+  const src = renderer.domElement;
+  const w = src.width, h = src.height;
+  const b = Math.round(w * 0.05), foot = Math.round(w * 0.1);
+  const c = document.createElement('canvas');
+  c.width = w + b * 2;
+  c.height = h + b + foot;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#efe3c8';
+  ctx.fillRect(0, 0, c.width, c.height);
+  for (let i = 0; i < 500; i++) {
+    ctx.fillStyle = `rgba(120,80,40,${rand(0.02, 0.09)})`;
+    ctx.fillRect(rand(0, c.width), rand(0, c.height), 2, 2);
+  }
+  ctx.drawImage(src, b, b, w, h);
+  ctx.strokeStyle = '#6b3d16';
+  ctx.lineWidth = Math.max(2, w * 0.004);
+  ctx.strokeRect(b - 2, b - 2, w + 4, h + 4);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#3a1c06';
+  ctx.font = `bold ${Math.round(foot * 0.4)}px Georgia, serif`;
+  ctx.fillText('TikiBlãnco — Blood Moon Canyon', c.width / 2, h + b + foot * 0.48);
+  ctx.fillStyle = '#a83a12';
+  ctx.font = `italic ${Math.round(foot * 0.2)}px Georgia, serif`;
+  ctx.fillText('B L A N C O ,   T E X A S', c.width / 2, h + b + foot * 0.8);
+  const a = document.createElement('a');
+  a.download = 'tikiblanco-canyon.png';
+  a.href = c.toDataURL('image/png');
+  a.click();
+  AudioEngine.pluck(1568, 0.09);
+}
+$('photoBtn').addEventListener('click', takePhoto);
 
 // ------------------------------------------------------------ discovery core
 let cine = null;   // sky cinematic state
@@ -2310,6 +2702,7 @@ function discover(poi) {
   if (found[poi.id]) return;
   found[poi.id] = true;
   foundCount++;
+  if (runStart === null && foundCount === 1) runStart = nowT; // the run clock starts
   $('count').textContent = foundCount;
   showPopup(poi.name, poi.text, poi.secret ? '★ Secret Discovery' : 'Discovery');
   AudioEngine.zelda();
@@ -2340,7 +2733,16 @@ function discover(poi) {
   saveGame();
   if (foundCount === pois.length && !completeShown) {
     completeShown = true;
+    let timeLine = '';
+    if (runStart !== null) {
+      const el = nowT - runStart;
+      const isBest = !runBest || el < runBest;
+      if (isBest) runBest = el;
+      saveExtras();
+      timeLine = 'Canyon explored in ' + fmtTime(el) + (isBest ? ' — a new best!' : '');
+    }
     setTimeout(() => {
+      $('completeTime').textContent = timeLine;
       $('complete').classList.add('show');
       AudioEngine.fanfare();
       tikiGlow = 1e9; // eyes stay lit forever
@@ -2358,6 +2760,29 @@ let nowT = 0, started = false;
 let batsErupted = false;
 const burstBats = [];
 let owlT = 18, crackleT = 0.5, pluckT = 1;
+let stick = null;                       // Wynonna's fetch stick
+const fish = { state: 'idle', tally: 0, legend: false, t: 0, waitT: 0, biteT: 0, from: V3(), to: V3() };
+let fishBobber, fishLine;
+let mugCount = 0;
+let bmNext = 150, bmT = 0;              // blood moon omen timer
+const bmBase = new THREE.Color(0x5e1c07), bmDeep = new THREE.Color(0x78100a);
+let runStart = null, runBest = null;
+const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+{
+  // fishing gear (hidden until cast)
+  fishBobber = new THREE.Mesh(mergeGeoms([
+    { g: new THREE.SphereGeometry(0.09, 6, 5), m: M4(0, 0.04, 0, 0, 0, 0, 1, 0.7, 1), c: 0xd8402a },
+    { g: new THREE.SphereGeometry(0.07, 6, 4), m: M4(0, 0.11, 0), c: 0xe8e2d2 },
+  ]), matFlat);
+  fishBobber.visible = false;
+  scene.add(fishBobber);
+  const lg = new THREE.BufferGeometry();
+  lg.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+  fishLine = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd8ccb0, transparent: true, opacity: 0.5 }));
+  fishLine.visible = false;
+  fishLine.frustumCulled = false;
+  scene.add(fishLine);
+}
 const clock = new THREE.Clock();
 const hintFadeAt = { t: Infinity };
 
@@ -2412,60 +2837,78 @@ function tick() {
   const dt = Math.min(clock.getDelta(), 0.05);
   nowT += dt;
 
-  // ---- driving physics
-  if (started && !cine && !intro && vehicle.on) {
+  // ---- driving / paddling physics
+  if (started && !cine && !intro && activeV) {
+    const V = activeV, isBoat = V.kind === 'canoe';
     const inp = moveInput();
-    vehicle.speed += inp.y * 13 * dt;
-    vehicle.speed *= Math.exp(-(Math.abs(inp.y) > 0.05 ? 0.35 : 1.7) * dt);
-    if (Math.abs(vehicle.speed) < 0.05 && Math.abs(inp.y) < 0.05) vehicle.speed = 0;
-    vehicle.speed = clamp(vehicle.speed, -6, 17);
-    const sgn = vehicle.speed >= 0 ? 1 : -1;
-    vehicle.yaw -= inp.x * dt * 1.75 * clamp(Math.abs(vehicle.speed) / 7, 0, 1) * sgn;
-    const fx = Math.sin(vehicle.yaw), fz = Math.cos(vehicle.yaw);
-    let nx = vehicle.x + fx * vehicle.speed * dt;
-    let nz = vehicle.z + fz * vehicle.speed * dt;
-    const ng = terrainH(nx, nz), cg = terrainH(vehicle.x, vehicle.z);
-    if (ng < WATER_Y - 0.55 || ng - cg > 1.7) {
-      vehicle.speed *= -0.25; // too deep / too steep — bounce off
+    V.speed += inp.y * (isBoat ? 6 : 13) * dt;
+    V.speed *= Math.exp(-(Math.abs(inp.y) > 0.05 ? (isBoat ? 0.25 : 0.35) : (isBoat ? 0.8 : 1.7)) * dt);
+    if (Math.abs(V.speed) < 0.05 && Math.abs(inp.y) < 0.05) V.speed = 0;
+    V.speed = clamp(V.speed, isBoat ? -3 : -6, isBoat ? 7.5 : 17);
+    const sgn = V.speed >= 0 ? 1 : -1;
+    V.yaw -= inp.x * dt * (isBoat ? 1.35 : 1.75) * clamp(Math.abs(V.speed) / (isBoat ? 3 : 7), 0, 1) * sgn;
+    const fx = Math.sin(V.yaw), fz = Math.cos(V.yaw);
+    let nx = V.x + fx * V.speed * dt;
+    let nz = V.z + fz * V.speed * dt;
+    const ng = terrainH(nx, nz), cg = terrainH(V.x, V.z);
+    const blocked = isBoat
+      ? ng > WATER_Y - 0.28                              // canoe runs aground
+      : (ng < WATER_Y - 0.55 || ng - cg > 1.7);          // bronco: too deep / too steep
+    if (blocked) {
+      V.speed *= -0.25;
     } else {
+      const selfC = isBoat ? canoeCollider : broncoCollider;
       for (const c of colliders) {
-        if (c === broncoCollider) continue;
+        if (c === selfC) continue;
         const dx = nx - c.x, dz = nz - c.z, d = Math.hypot(dx, dz);
-        const rr = c.r + 1.1;
-        if (d < rr && d > 0.001) { nx = c.x + dx / d * rr; nz = c.z + dz / d * rr; vehicle.speed *= 0.6; }
+        const rr = c.r + (isBoat ? 0.7 : 1.1);
+        if (d < rr && d > 0.001) { nx = c.x + dx / d * rr; nz = c.z + dz / d * rr; V.speed *= 0.6; }
       }
-      vehicle.x = clamp(nx, -106, 106);
-      vehicle.z = clamp(nz, -102, 110);
+      V.x = clamp(nx, -106, 106);
+      V.z = clamp(nz, -102, 110);
     }
-    broncoCollider.x = vehicle.x;
-    broncoCollider.z = vehicle.z;
-    const gy = Math.max(terrainH(vehicle.x, vehicle.z), WATER_Y - 0.5);
-    const hF = terrainH(vehicle.x + fx * 1.4, vehicle.z + fz * 1.4);
-    const hB = terrainH(vehicle.x - fx * 1.4, vehicle.z - fz * 1.4);
-    const hL = terrainH(vehicle.x + fz * 0.9, vehicle.z - fx * 0.9);
-    const hR = terrainH(vehicle.x - fz * 0.9, vehicle.z + fx * 0.9);
-    broncoGrp.position.set(vehicle.x, gy, vehicle.z);
-    broncoGrp.rotation.order = 'YXZ';
-    broncoGrp.rotation.set(-Math.atan2(hF - hB, 2.8), vehicle.yaw, Math.atan2(hL - hR, 1.8));
-    const spin = vehicle.speed * dt / 0.5;
-    for (const w of broncoWheels) w.rotation.x += spin;
-    vehicle.fxT = (vehicle.fxT || 0) - dt;
-    if (Math.abs(vehicle.speed) > 5 && vehicle.fxT <= 0) {
-      vehicle.fxT = 0.09;
-      if (gy < WATER_Y + 0.15) spawnRipple(vehicle.x, vehicle.z);
-      else spawnDust(vehicle.x - fx * 1.7, gy + 0.2, vehicle.z - fz * 1.7);
+    let gy;
+    if (isBoat) {
+      canoeCollider.x = V.x; canoeCollider.z = V.z;
+      gy = WATER_Y - 0.1;
+      canoeGrp.position.set(V.x, gy + Math.sin(nowT * 2.2) * 0.05, V.z);
+      canoeGrp.rotation.set(Math.sin(nowT * 2.6) * 0.02, V.yaw, Math.sin(nowT * 1.9) * 0.03);
+      const stroking = Math.abs(V.speed) > 0.6;
+      canoePaddle.rotation.z = stroking ? Math.sin(nowT * 6) * 0.7 : 0.25;
+      canoePaddle.position.x = stroking ? Math.sign(Math.sin(nowT * 3)) * 0.32 : 0.32;
+      V.fxT = (V.fxT || 0) - dt;
+      if (stroking && V.fxT <= 0) { V.fxT = 0.32; spawnRipple(V.x, V.z); AudioEngine.crackle(0.14); }
+    } else {
+      broncoCollider.x = V.x; broncoCollider.z = V.z;
+      gy = Math.max(terrainH(V.x, V.z), WATER_Y - 0.5);
+      const hF = terrainH(V.x + fx * 1.4, V.z + fz * 1.4);
+      const hB = terrainH(V.x - fx * 1.4, V.z - fz * 1.4);
+      const hL = terrainH(V.x + fz * 0.9, V.z - fx * 0.9);
+      const hR = terrainH(V.x - fz * 0.9, V.z + fx * 0.9);
+      broncoGrp.position.set(V.x, gy, V.z);
+      broncoGrp.rotation.order = 'YXZ';
+      broncoGrp.rotation.set(-Math.atan2(hF - hB, 2.8), V.yaw, Math.atan2(hL - hR, 1.8));
+      const spin = V.speed * dt / 0.5;
+      for (const w of broncoWheels) w.rotation.x += spin;
+      V.fxT = (V.fxT || 0) - dt;
+      if (Math.abs(V.speed) > 5 && V.fxT <= 0) {
+        V.fxT = 0.09;
+        if (gy < WATER_Y + 0.15) spawnRipple(V.x, V.z);
+        else spawnDust(V.x - fx * 1.7, gy + 0.2, V.z - fz * 1.7);
+      }
+      AudioEngine.setEngine(V.speed);
+      if (Math.random() < dt * 0.5) AudioEngine.crackle(0.12); // a little radio static
     }
-    AudioEngine.setEngine(vehicle.speed);
-    player.pos.set(vehicle.x, gy + 0.8, vehicle.z);
-    player.moving = Math.abs(vehicle.speed) > 0.5;
+    player.pos.set(V.x, gy + 0.8, V.z);
+    player.moving = Math.abs(V.speed) > 0.5;
     player.sprint = false;
     player.swim = false;
-    if (nowT - cam.lastDrag > 1.2 && Math.abs(vehicle.speed) > 1)
-      cam.yaw = lerpAngle(cam.yaw, vehicle.yaw + Math.PI, 1 - Math.exp(-1.7 * dt));
+    if (nowT - cam.lastDrag > 1.2 && Math.abs(V.speed) > 1)
+      cam.yaw = lerpAngle(cam.yaw, V.yaw + Math.PI, 1 - Math.exp(-1.7 * dt));
   }
 
   // ---- player physics (on foot)
-  if (started && !cine && !intro && !vehicle.on) {
+  if (started && !cine && !intro && !activeV) {
     const inp = moveInput();
     const mag = Math.hypot(inp.x, inp.y);
     player.moving = mag > 0.05;
@@ -2477,7 +2920,8 @@ function tick() {
       let mx = fx * inp.y + rx * inp.x, mz = fz * inp.y + rz * inp.x;
       const ml = Math.hypot(mx, mz);
       mx /= ml; mz /= ml;
-      const speed = (player.swim ? 3.2 : player.sprint ? 10.6 : 7.0) * Math.min(mag, 1);
+      const boost = player.boostT > 0 ? 1.42 : 1; // the winemaker's gift
+      const speed = (player.swim ? 3.2 : player.sprint ? 10.6 : 7.0) * boost * Math.min(mag, 1);
       const np = tryMove(player.pos.x + mx * speed * dt, player.pos.z + mz * speed * dt);
       player.pos.x = np.x; player.pos.z = np.z;
       player.yaw = lerpAngle(player.yaw, Math.atan2(mx, mz), 1 - Math.exp(-12 * dt));
@@ -2512,9 +2956,12 @@ function tick() {
   player.animT += dt * (player.moving ? (player.sprint ? 14 : 10.5) : 2);
   // footstep dust & wading ripples
   player.fxT = (player.fxT || 0) - dt;
-  if (player.moving && player.fxT <= 0 && started) {
+  if (player.moving && player.fxT <= 0 && started && !activeV) {
     if (player.swim) { spawnRipple(player.pos.x, player.pos.z); player.fxT = 0.4; }
-    else if (player.onGround) { spawnDust(player.pos.x, player.pos.y, player.pos.z); player.fxT = player.sprint ? 0.14 : 0.24; }
+    else if (player.onGround) {
+      spawnDust(player.pos.x, player.pos.y, player.pos.z, player.boostT > 0 ? 0xc46ae8 : 0xffffff);
+      player.fxT = player.sprint || player.boostT > 0 ? 0.14 : 0.24;
+    }
   }
   if (player.swim && !player.wasSwim) spawnRipple(player.pos.x, player.pos.z);
   player.wasSwim = player.swim;
@@ -2573,7 +3020,7 @@ function tick() {
     }
   }
   if (!cine && !intro) {
-    let distT = vehicle.on ? 11.5 : 6.8;
+    let distT = activeV ? (activeV.kind === 'canoe' ? 9 : 11.5) : 6.8;
     if (Math.hypot(player.pos.x - GROTTO.x, player.pos.z - GROTTO.z) < 11) distT = 3.4;
     else if (Math.hypot(player.pos.x - DEN.x, player.pos.z - DEN.z) < 7.5) distT = 3.0;
     cam.dist = lerp(cam.dist, distT, 1 - Math.exp(-3 * dt));
@@ -2627,9 +3074,12 @@ function tick() {
     } else {
       trackEl.style.display = 'none';
     }
-    // DRIVE / EXIT button
-    const nearBronco = Math.hypot(player.pos.x - vehicle.x, player.pos.z - vehicle.z) < 4.5;
-    $('driveBtn').style.display = (vehicle.on || nearBronco) && !cine && !intro ? '' : 'none';
+    // DRIVE / PADDLE / EXIT button
+    const dB = Math.hypot(player.pos.x - vehicle.x, player.pos.z - vehicle.z);
+    const dC = Math.hypot(player.pos.x - canoeState.x, player.pos.z - canoeState.z);
+    const nearV = Math.min(dB, dC) < 4.5;
+    $('driveBtn').style.display = (activeV || nearV) && !cine && !intro ? '' : 'none';
+    if (!activeV && nearV) $('driveBtn').textContent = dB <= dC ? 'DRIVE' : 'PADDLE';
   }
 
   // ---- critters
@@ -2779,16 +3229,23 @@ function tick() {
     if (watcherFade <= 0) watcher.visible = false;
   }
 
-  // ---- Wynonna (expedition dog)
+  // ---- Wynonna (expedition dog + fetch champion)
   {
     wynWag = Math.max(0, wynWag - dt);
     let wmoving = false;
-    if (wynState === 'follow') {
-      const dx = player.pos.x - wyn.position.x, dz = player.pos.z - wyn.position.z;
+    if (wynState === 'follow' && wyn.visible) {
+      // pick her target: a thrown stick outranks everything
+      let tx = player.pos.x, tz = player.pos.z, arriveR = 2.3, chase = false;
+      if (stick && (stick.state === 'flying' || stick.state === 'ground')) {
+        tx = stick.mesh.position.x; tz = stick.mesh.position.z; arriveR = 0.7; chase = true;
+      } else if (stick && stick.state === 'returning') {
+        arriveR = 1.7; chase = true;
+      }
+      const dx = tx - wyn.position.x, dz = tz - wyn.position.z;
       const d = Math.hypot(dx, dz);
-      if (d > 2.3) {
+      if (d > arriveR) {
         wmoving = true;
-        const sp = d > 15 ? 10 : Math.min(8, 2.5 + d * 0.9);
+        const sp = chase ? 9.5 : (d > 15 ? 10 : Math.min(8, 2.5 + d * 0.9));
         let nx = wyn.position.x + dx / d * sp * dt, nz = wyn.position.z + dz / d * sp * dt;
         for (const c of colliders) {
           const cdx = nx - c.x, cdz = nz - c.z, cd = Math.hypot(cdx, cdz);
@@ -2796,6 +3253,22 @@ function tick() {
         }
         wyn.position.x = nx; wyn.position.z = nz;
         wyn.rotation.y = lerpAngle(wyn.rotation.y, Math.atan2(dx, dz), 1 - Math.exp(-10 * dt));
+      } else if (stick && stick.state === 'ground') {
+        stick.state = 'returning';   // got it!
+        AudioEngine.yip();
+      } else if (stick && stick.state === 'returning') {
+        stick.state = 'held';        // drops it at your feet
+        stick.mesh.visible = false;
+        wynWag = 2.5;
+        AudioEngine.yip();
+      }
+      // carry the stick in her mouth on the way back
+      if (stick && stick.state === 'returning') {
+        stick.mesh.position.set(
+          wyn.position.x + Math.sin(wyn.rotation.y) * 0.5,
+          wyn.position.y + 0.45,
+          wyn.position.z + Math.cos(wyn.rotation.y) * 0.5);
+        stick.mesh.rotation.set(0, wyn.rotation.y + Math.PI / 2, 0);
       }
     }
     const wg = terrainH(wyn.position.x, wyn.position.z);
@@ -2917,6 +3390,155 @@ function tick() {
     }
   }
 
+  // ---- the stick, mid-flight
+  if (stick && stick.state === 'flying') {
+    stick.vel.y -= 18 * dt;
+    stick.mesh.position.addScaledVector(stick.vel, dt);
+    stick.mesh.rotation.x += dt * 9;
+    stick.mesh.rotation.z += dt * 7;
+    const sg = Math.max(terrainH(stick.mesh.position.x, stick.mesh.position.z), WATER_Y - 0.15);
+    if (stick.mesh.position.y <= sg + 0.08) {
+      stick.mesh.position.y = sg + 0.08;
+      stick.state = 'ground';
+      if (sg < WATER_Y) spawnRipple(stick.mesh.position.x, stick.mesh.position.z);
+    }
+  }
+
+  // ---- fishing
+  if (fish.state !== 'idle') {
+    if (Math.hypot(player.pos.x - fish.anchor.x, player.pos.z - fish.anchor.z) > 3) endFishing();
+    if (fish.state === 'cast') {
+      fish.t += dt / 0.6;
+      const t = Math.min(fish.t, 1);
+      fishBobber.position.lerpVectors(fish.from, fish.to, t);
+      fishBobber.position.y += Math.sin(Math.PI * t) * 2;
+      if (t >= 1) {
+        fish.state = 'wait';
+        fish.waitT = rand(2.5, 7);
+        spawnRipple(fishBobber.position.x, fishBobber.position.z);
+      }
+    } else if (fish.state === 'wait') {
+      fishBobber.position.y = WATER_Y + 0.05 + Math.sin(nowT * 2.2) * 0.04;
+      fish.waitT -= dt;
+      if (fish.waitT <= 0) {
+        fish.state = 'bite';
+        fish.biteT = 0.95;
+        spawnRipple(fishBobber.position.x, fishBobber.position.z);
+        if (AudioEngine.ctx && !AudioEngine.muted) AudioEngine.tone(180, AudioEngine.ctx.currentTime, 0.12, 0.14);
+      }
+    } else if (fish.state === 'bite') {
+      fishBobber.position.y = WATER_Y - 0.12 + Math.sin(nowT * 22) * 0.03;
+      fish.biteT -= dt;
+      if (fish.biteT <= 0) { fish.state = 'wait'; fish.waitT = rand(2, 6); } // it let go
+    }
+    const LP = fishLine.geometry.attributes.position;
+    LP.setXYZ(0, player.pos.x, player.pos.y + 1.15, player.pos.z);
+    LP.setXYZ(1, fishBobber.position.x, fishBobber.position.y, fishBobber.position.z);
+    LP.needsUpdate = true;
+  }
+
+  // ---- the winemaker's glass + speed boost
+  if (started) {
+    if (wineGlass.visible) {
+      wineGlow.material.opacity = 0.35 + 0.25 * Math.sin(nowT * 3);
+      if (!activeV && Math.hypot(player.pos.x + 68, player.pos.z - 10) < 1.9) {
+        wineGlass.visible = false;
+        wineRespawn = 120;
+        player.boostT = 30;
+        if (!found.wine) {
+          discover(pois.find(p => p.id === 'wine'));
+        } else {
+          showPopup('Blood Moon Red', 'Another glass, already poured. The winemaker is generous, whoever they are. Legs: fast.', 'Cheers', 4000);
+          AudioEngine.chime();
+        }
+      }
+    } else if (wineRespawn > 0) {
+      wineRespawn -= dt;
+      if (wineRespawn <= 0) wineGlass.visible = true;
+    }
+    if (player.boostT > 0) {
+      player.boostT -= dt;
+      $('boostChip').style.display = '';
+      $('boostChip').textContent = '🍷 ' + Math.ceil(Math.max(0, player.boostT)) + 's';
+      if (player.boostT <= 0) $('boostChip').style.display = 'none';
+    }
+  }
+
+  // ---- lost mugs
+  for (let i = 0; i < mugs.length; i++) {
+    const m = mugs[i];
+    if (m.got) continue;
+    m.grp.children[1].material.opacity = 0.28 + 0.2 * Math.sin(nowT * 3 + m.x);
+    if (started && !activeV && Math.hypot(player.pos.x - m.x, player.pos.z - m.z) < 1.9) {
+      m.got = true;
+      m.grp.visible = false;
+      mugCount++;
+      shelfMugs[i].visible = true;
+      AudioEngine.pluck(659, 0.1);
+      AudioEngine.pluck(988, 0.07);
+      showPopup('Lost Tiki Mug', `It flies home to Trader Blanco's bar top on its own. Don't think about it too hard. (${mugCount}/5)`, `Mug ${mugCount}/5`, 4200);
+      if (wynState === 'follow') wynWag = 2;
+      if (mugCount === 5) {
+        setTimeout(() => {
+          showPopup("The Regular's Pour", 'Every lost mug home safe. Somewhere in the grotto, a barstool now has your name burned into it. First round is forever on the house.', '★ Reward', 8000);
+          AudioEngine.fanfare();
+        }, 1600);
+      }
+      saveExtras();
+    }
+  }
+
+  // ---- Trader Blanco (appears once the canyon is fully explored)
+  trader.visible = foundCount >= pois.length;
+  if (trader.visible) {
+    trader.rotation.z = Math.sin(nowT * 1.1) * 0.03;
+    if (!traderTalked && Math.hypot(player.pos.x - (GROTTO.x - 5.4), player.pos.z - GROTTO.z) < 3.2) {
+      traderTalked = true;
+      const mugLine = mugCount >= 5 ? ' And thank you kindly for the mugs — the regulars were getting antsy.' : ' If you happen across my lost mugs out there, I keep a shelf warm for them.';
+      showPopup('Trader Blanco', 'Well now. You found every corner of my canyon, friend. First pour is on the house.' + mugLine + ' Aloha, y’all.', 'Howdy', 9000);
+      AudioEngine.pluck(523, 0.09);
+      AudioEngine.pluck(659, 0.09);
+      setTimeout(() => AudioEngine.pluck(784, 0.1), 200);
+    }
+  }
+
+  // ---- blood moon omens
+  if (started) {
+    if (bmT > 0) {
+      bmT -= dt;
+      const k = clamp(Math.min(bmT, 24 - bmT) / 3, 0, 1);
+      scene.fog.color.copy(bmBase).lerp(bmDeep, k * 0.85);
+      moonGlowSprite.scale.setScalar(120 + k * (42 + Math.sin(nowT * 6) * 14));
+      tikiGlow = Math.max(tikiGlow, 0.15);
+      if (bmT <= 0) {
+        bmT = 0;
+        bmNext = rand(170, 280);
+        scene.fog.color.copy(bmBase);
+        moonGlowSprite.scale.setScalar(120);
+        if (!found.chupacabra) chupa.speed = 1.1;
+      }
+    } else {
+      bmNext -= dt;
+      if (bmNext <= 0) {
+        bmT = 24;
+        showPopup('Blood Moon Rising', 'The moon swells and the canyon holds its breath. Strange things move faster in this light…', 'Omen', 5000);
+        AudioEngine.growl();
+        AudioEngine.thumps();
+        if (!found.chupacabra) chupa.speed = 2.6;
+      }
+    }
+  }
+
+  // ---- contextual button visibility
+  if (started) {
+    $('fetchBtn').style.display =
+      wynState === 'follow' && !activeV && !cine && !intro && (!stick || stick.state === 'held') ? '' : 'none';
+    const dRiver = Math.abs(player.pos.x - riverX(player.pos.z));
+    $('fishBtn').style.display =
+      !activeV && !cine && !intro && !player.swim && ((dRiver <= 14 && dRiver >= 4) || fish.state !== 'idle') ? '' : 'none';
+    $('fishBtn').textContent = fish.state === 'bite' ? 'HOOK!' : fish.state === 'idle' ? 'FISH' : 'REEL';
+  }
+
   renderer.render(scene, camera);
 }
 
@@ -2927,8 +3549,10 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+loadExtras();
 loadSave();
 tick();
 
 // tiny debug handle (harmless in production, used by automated smoke tests)
-window.__tb = { player, cam, pois, found, vehicle, toggleDrive };
+window.__tb = { player, cam, pois, found, vehicle, canoeState, toggleDrive, fishPress, throwStick, fish, mugs,
+  get activeV() { return activeV; } };
