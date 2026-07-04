@@ -971,6 +971,178 @@ const torchFlames = [];
   addCollider(GROTTO.x - 4.6, GROTTO.z + 3.4, 0.8); // barrel
 }
 
+// ------- grotto interior detail, straight from the real Tiki Blanco photos
+let stageSeen = false;
+{
+  const gy = terrainH(GROTTO.x, GROTTO.z);
+  const gx = new THREE.Group();
+  gx.position.set(GROTTO.x, gy, GROTTO.z);
+
+  // wall of carved masks (every color in the collection)
+  const maskParts = [];
+  const maskCols = [[0xa8452a, 0xe8cf8a], [0x8a6534, 0x241505], [0x4a6448, 0xd8b98c],
+    [0x9a3a4a, 0xe8e2d2], [0x6b4c24, 0xff8844], [0x54627a, 0xe8cf8a], [0xb5824e, 0x2a1608]];
+  for (let i = 0; i < 7; i++) {
+    const a = Math.PI * (1.05 + i * 0.13);           // along the back wall arc
+    const r = 8.2, mx = Math.cos(a) * r, mz = Math.sin(a) * r;
+    const my = 2.6 + (i % 3) * 1.1;
+    const ry = Math.atan2(-mx, -mz);
+    const [base, accent] = maskCols[i];
+    const M = (dx, dy, sx, sy, sz, c) =>
+      maskParts.push({ g: new THREE.BoxGeometry(sx, sy, sz), m: new THREE.Matrix4().makeRotationY(ry).premultiply(new THREE.Matrix4().makeTranslation(mx, my + dy, mz)).multiply(M4(dx, 0, 0.1, 0, 0, 0)), c });
+    M(0, 0, 0.55, 0.95, 0.14, base);                 // face
+    M(0, 0.28, 0.6, 0.14, 0.18, accent);             // brow
+    M(-0.13, 0.1, 0.14, 0.12, 0.16, 0x1c1208);       // eyes
+    M(0.13, 0.1, 0.14, 0.12, 0.16, 0x1c1208);
+    M(0, -0.24, 0.34, 0.18, 0.16, accent);           // mouth
+  }
+  gx.add(new THREE.Mesh(mergeGeoms(maskParts), matFlat));
+
+  // skull shelf (the horror corner)
+  const skullParts = [];
+  skullParts.push({ g: new THREE.BoxGeometry(2.2, 0.08, 0.5), m: M4(-4.6, 2.1, 2.9), c: 0x4a3018 });
+  for (let i = 0; i < 3; i++) {
+    const sx2 = -5.3 + i * 0.75;
+    skullParts.push({ g: new THREE.SphereGeometry(0.22, 7, 6), m: M4(sx2, 2.36, 2.9, 0, 0.6, 0, 1, 0.95, 1.05), c: 0xd8ccb0 });
+    skullParts.push({ g: new THREE.BoxGeometry(0.2, 0.12, 0.16), m: M4(sx2, 2.16, 2.95), c: 0xc4b89c });
+    skullParts.push({ g: new THREE.BoxGeometry(0.06, 0.07, 0.05), m: M4(sx2 - 0.06, 2.38, 3.08), c: 0x1c1208 });
+    skullParts.push({ g: new THREE.BoxGeometry(0.06, 0.07, 0.05), m: M4(sx2 + 0.06, 2.38, 3.08), c: 0x1c1208 });
+  }
+  // ship's wheel on the wall above them
+  skullParts.push({ g: new THREE.TorusGeometry(0.55, 0.06, 5, 12), m: M4(-6.2, 4.2, 3.4, 0, Math.PI / 3, 0), c: 0x5c3a1c });
+  for (let i = 0; i < 4; i++)
+    skullParts.push({ g: new THREE.CylinderGeometry(0.03, 0.03, 1.5, 4), m: M4(-6.2, 4.2, 3.4, Math.PI / 2, 0, i * Math.PI / 4).multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2)), c: 0x6b4a26 });
+  gx.add(new THREE.Mesh(mergeGeoms(skullParts), matFlat));
+
+  // pink rattan pendant lamps over the bar
+  for (let i = 0; i < 3; i++) {
+    const lz = -1.6 + i * 1.6;
+    const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.38, 0.5, 8, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xd84a9a, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+    shade.position.set(-3.4, 3.4, lz);
+    gx.add(shade);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5),
+      new THREE.MeshBasicMaterial({ color: 0xff9ad0 }));
+    bulb.position.set(-3.4, 3.32, lz);
+    gx.add(bulb);
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 1.6, 4),
+      new THREE.MeshBasicMaterial({ color: 0x1c1208 }));
+    cord.position.set(-3.4, 4.4, lz);
+    gx.add(cord);
+  }
+  const magenta = new THREE.PointLight(0xff4fae, 7, 11);
+  magenta.position.set(-3.4, 3.2, 0);
+  gx.add(magenta);
+
+  // neon TIKI BLÃNCO sign over the back bar
+  const neonTex = canvasTex(256, (ctx, s) => {
+    ctx.fillStyle = '#180a10'; ctx.fillRect(0, 0, s, s);
+    ctx.shadowColor = '#ff4fae'; ctx.shadowBlur = 22;
+    ctx.fillStyle = '#ff9ad0'; ctx.textAlign = 'center';
+    ctx.font = 'bold 46px Georgia, serif';
+    ctx.fillText('TIKI', s / 2, 108);
+    ctx.fillText('BLÃNCO', s / 2, 168);
+  });
+  const neon = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.08),
+    [matFlat, matFlat, matFlat, matFlat, new THREE.MeshBasicMaterial({ map: neonTex }), matFlat]);
+  neon.position.set(-7.6, 4.4, 0);
+  neon.rotation.y = Math.PI / 2;
+  gx.add(neon);
+
+  // the stage — string lights, drum kit, amps, colored wash
+  const stageParts = [];
+  stageParts.push({ g: new THREE.BoxGeometry(4.6, 0.42, 2.6), m: M4(0.6, 0.21, -5.6), c: 0x3c2c1a });
+  stageParts.push({ g: new THREE.CylinderGeometry(0.55, 0.55, 0.5, 9), m: M4(0.6, 0.95, -5.9, Math.PI / 2, 0, 0), c: 0xa85a2a }); // bass drum
+  stageParts.push({ g: new THREE.CircleGeometry(0.55, 9), m: M4(0.6, 0.95, -5.62), c: 0xe8e2d2 });
+  stageParts.push({ g: new THREE.CylinderGeometry(0.26, 0.26, 0.3, 8), m: M4(0.15, 1.45, -6.1, 0.3, 0, 0), c: 0xb56a3a });   // toms
+  stageParts.push({ g: new THREE.CylinderGeometry(0.26, 0.26, 0.3, 8), m: M4(1.05, 1.45, -6.1, 0.3, 0, 0), c: 0xb56a3a });
+  stageParts.push({ g: new THREE.CylinderGeometry(0.3, 0.3, 0.22, 8), m: M4(-0.5, 1.05, -5.4), c: 0xc4b89c });               // snare
+  for (const cx of [-1.0, 2.1]) {                                                                                            // cymbals
+    stageParts.push({ g: new THREE.CylinderGeometry(0.02, 0.03, 1.5, 4), m: M4(cx, 1.2, -6.2), c: 0x2a2a2a });
+    stageParts.push({ g: new THREE.CylinderGeometry(0.42, 0.42, 0.03, 10), m: M4(cx, 1.95, -6.2, 0, 0, 0.08), c: 0xd8b34a });
+  }
+  for (const ax of [-1.6, 2.8]) {                                                                                            // amps
+    stageParts.push({ g: new THREE.BoxGeometry(0.9, 1.1, 0.7), m: M4(ax, 0.97, -6.3), c: 0x1c1a18 });
+    stageParts.push({ g: new THREE.BoxGeometry(0.74, 0.8, 0.05), m: M4(ax, 1.05, -5.94), c: 0x3a3632 });
+  }
+  stageParts.push({ g: new THREE.CylinderGeometry(0.025, 0.035, 1.6, 4), m: M4(0.6, 1.2, -4.6), c: 0x2a2a2a });               // mic stand
+  stageParts.push({ g: new THREE.SphereGeometry(0.07, 5, 4), m: M4(0.6, 2.02, -4.6), c: 0x1c1a18 });
+  gx.add(new THREE.Mesh(mergeGeoms(stageParts), matFlat));
+  addCollider(GROTTO.x + 0.6, GROTTO.z - 5.6, 2.6);
+  // stage wash: two emissive beam cones, red and blue (like show night)
+  for (const [bx, bc] of [[-1.2, 0xff2233], [2.4, 0x3355ff]]) {
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(1.0, 3.4, 6, 1, true),
+      new THREE.MeshBasicMaterial({ color: bc, transparent: true, opacity: 0.14, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    beam.position.set(bx, 3.4, -5.6);
+    gx.add(beam);
+  }
+  // string lights: two sagging strands across the ceiling
+  const bulbCols = [0xffd9a0, 0xff5566, 0x66aaff, 0xffaa66];
+  for (const [z1, z2, y0] of [[-6.5, 6.5, 5.0], [-5, 5, 5.6]]) {
+    const pts = [];
+    for (let i = 0; i <= 12; i++) {
+      const t = i / 12;
+      const px = lerp(-5, 5, t) * (z1 < -6 ? 0.7 : -0.6);
+      const pz = lerp(z1, z2, t);
+      const py = y0 - Math.sin(Math.PI * t) * 1.1;
+      pts.push(V3(px, py, pz));
+      if (i > 0 && i < 12) {
+        const bulb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0),
+          new THREE.MeshBasicMaterial({ color: bulbCols[i % bulbCols.length] }));
+        bulb.position.set(px, py - 0.09, pz);
+        gx.add(bulb);
+      }
+    }
+    const lg = new THREE.BufferGeometry().setFromPoints(pts);
+    gx.add(new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0x1c1208 })));
+  }
+
+  // jungle wall with blue accents + glass fishing floats in the corner
+  const jungleParts = [];
+  for (let i = 0; i < 9; i++) {
+    const a = Math.PI * (0.28 + i * 0.055);
+    const r = rand(7.2, 8.2);
+    jungleParts.push({
+      g: new THREE.IcosahedronGeometry(0.8, 0),
+      m: M4(Math.cos(a) * r, rand(0.8, 3.6), Math.sin(a) * r, rand(0, 3), rand(0, 3), 0, 1, rand(0.7, 1.3), 0.7),
+      c: [0x24421e, 0x2e5426, 0x1c3618][i % 3]
+    });
+  }
+  gx.add(new THREE.Mesh(mergeGeoms(jungleParts), matFlat));
+  const blueAccent = new THREE.PointLight(0x3355ff, 5, 9);
+  blueAccent.position.set(1.5, 2.5, 5.5);
+  gx.add(blueAccent);
+  for (let i = 0; i < 3; i++) {   // glass floats
+    const float = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 6),
+      new THREE.MeshStandardMaterial({ color: [0x3a7a9a, 0x4a9a6a, 0x2a5a8a][i], transparent: true, opacity: 0.55, roughness: 0.2 }));
+    float.position.set(-1 + i * 1.1, 3.9 - (i % 2) * 0.4, 5.8);
+    gx.add(float);
+  }
+
+  // glowing tiki fountain by the door
+  const fountainParts = [];
+  fountainParts.push({ g: new THREE.CylinderGeometry(0.75, 0.85, 0.45, 9), m: M4(3.6, 0.22, 3.6), c: 0x565a44 });
+  fountainParts.push({ g: new THREE.CircleGeometry(0.62, 9), m: M4(3.6, 0.46, 3.6, -Math.PI / 2, 0, 0), c: 0x3a6a7a });
+  fountainParts.push({ g: new THREE.BoxGeometry(0.5, 0.9, 0.4), m: M4(3.6, 0.9, 3.85, 0, Math.PI, 0), c: 0x6e7157 });
+  fountainParts.push({ g: new THREE.BoxGeometry(0.4, 0.16, 0.12), m: M4(3.6, 1.0, 3.62), c: 0x2a2417 });
+  gx.add(new THREE.Mesh(mergeGeoms(fountainParts), matFlat));
+  const fountainGlow = new THREE.Mesh(new THREE.SphereGeometry(0.14, 6, 5),
+    new THREE.MeshBasicMaterial({ color: 0xffc966 }));
+  fountainGlow.position.set(3.6, 0.62, 3.6);
+  gx.add(fountainGlow);
+  addCollider(GROTTO.x + 3.6, GROTTO.z + 3.6, 1.0);
+
+  // peacock chair, throne of the grotto
+  const chairParts = [];
+  chairParts.push({ g: new THREE.CircleGeometry(1.05, 12, 0, Math.PI), m: M4(5.2, 1.6, -2.4, 0, -Math.PI / 3.2, 0), c: 0xb99a5c });
+  chairParts.push({ g: new THREE.CylinderGeometry(0.42, 0.5, 0.5, 8), m: M4(5.2, 0.5, -2.4), c: 0xa3813f });
+  chairParts.push({ g: new THREE.CylinderGeometry(0.36, 0.42, 0.12, 8), m: M4(5.2, 0.8, -2.4), c: 0x8a3520 });
+  gx.add(new THREE.Mesh(mergeGeoms(chairParts), matFlat));
+  addCollider(GROTTO.x + 5.2, GROTTO.z - 2.4, 0.8);
+
+  scene.add(gx);
+}
+
 // ----------------------------------------------------- roaming critters
 const wanderers = [];
 function makeWanderer(grp, home, speed, opts = {}) {
@@ -1903,7 +2075,7 @@ const pois = [
     text: 'The goodest ranger in the Hill Country. Curly, fearless, pink harness. She has decided she is coming with you, and that is that.' },
   { id: 'grotto', name: "Trader Blanco's Grotto", x: GROTTO.x + 7, z: GROTTO.z, r: 4.5, my: 8,
     hint: 'Torchlight flickers at a door in the western wall.',
-    text: 'Rum barrels, glowing mugs, a blowfish lamp — a proper tiki temple carved into the canyon. Trader Blanco just stepped out. Leave a tip anyway.' },
+    text: 'Glowing mugs, a blowfish lamp, a wall of carved masks, and a stage under string lights — a proper tiki temple carved into the canyon. Trader Blanco just stepped out. Leave a tip anyway.' },
   { id: 'winnie', name: "Winnie's Den", x: DEN.x - 4.5, z: DEN.z, r: 4, my: 5.5,
     hint: 'A gentle rumble of snoring from the east rocks.',
     text: 'Winnie, the gentle giant of the canyon. He guards nothing, greets everyone, and naps twenty-two hours a day. The bones are from friends.' },
@@ -3486,6 +3658,16 @@ function tick() {
       }
       saveExtras();
     }
+  }
+
+  // ---- the grotto stage (one-time flavor moment)
+  if (started && !stageSeen &&
+      Math.hypot(player.pos.x - (GROTTO.x + 0.6), player.pos.z - (GROTTO.z - 5.6)) < 3.4) {
+    stageSeen = true;
+    showPopup('The Stage', 'String lights, a drum kit, and two amps still warm — the house band just stepped out back. Tip jar runs on the honor system.', 'Live at the Grotto', 6000);
+    AudioEngine.pluck(392, 0.08);
+    AudioEngine.pluck(494, 0.08);
+    setTimeout(() => AudioEngine.pluck(587, 0.1), 180);
   }
 
   // ---- Trader Blanco (appears once the canyon is fully explored)
