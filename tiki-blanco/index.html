@@ -143,6 +143,25 @@
   }
   body.touch #jumpBtn{ display:flex; }
 
+  /* discovery tracker compass */
+  #tracker{
+    position:fixed; left:14px; bottom:calc(14px + env(safe-area-inset-bottom)); z-index:22;
+    display:none; align-items:center; gap:8px; font-size:12.5px; letter-spacing:.06em; color:#e6cfa2;
+  }
+  #tracker #trackArrow{ display:inline-block; color:var(--ember); font-size:15px; transition:transform .12s linear; }
+
+  /* drive / exit button */
+  #driveBtn{
+    position:fixed; right:20px; bottom:calc(136px + env(safe-area-inset-bottom)); z-index:25;
+    display:none; padding:14px 18px; border-radius:50%; width:74px; height:74px;
+    background:linear-gradient(180deg,#2e6b3a,#1c4a24); border:2px solid #d8b98c;
+    color:var(--parchment); font-family:inherit; font-size:13px; letter-spacing:.08em; cursor:pointer;
+    box-shadow:0 3px 0 var(--shadow);
+  }
+  #driveBtn:active{ transform:translateY(2px); }
+
+  #guide .reset{ background:linear-gradient(180deg,#5a5048,#3a322c); font-size:12px; padding:6px 18px; margin-top:8px; }
+
   /* vignette for mood */
   #vignette{ position:fixed; inset:0; z-index:15; pointer-events:none;
     background:radial-gradient(ellipse at center, transparent 55%, rgba(8,3,1,.55) 100%); }
@@ -154,17 +173,21 @@
 
   <div id="hud">
     <div id="logo" class="hudCard"><b>TikiBl&atilde;nco</b><span>BLOOD MOON CANYON</span></div>
-    <div id="counter" class="hudCard" title="Open field guide"><b id="count">0</b><b style="color:#e6cfa2">/10</b><br><span>DISCOVERIES &#9662;</span></div>
+    <div id="counter" class="hudCard" title="Open field guide"><b id="count">0</b><b style="color:#e6cfa2">/22</b><br><span>DISCOVERIES &#9662;</span></div>
     <div id="muteBtn" class="hudCard" title="Toggle sound">&#128266;</div>
     <div id="ctrlHint" class="hudCard"></div>
   </div>
 
-  <div id="popup"><div class="kicker">Discovery</div><h3 id="popTitle"></h3><p id="popText"></p></div>
+  <div id="popup"><div class="kicker" id="popKicker">Discovery</div><h3 id="popTitle"></h3><p id="popText"></p></div>
+
+  <div id="tracker" class="hudCard"><span id="trackArrow">&#9650;</span><span id="trackDist"></span></div>
+  <button id="driveBtn">DRIVE</button>
 
   <div id="guide"><div class="book">
     <h3>Field Guide</h3><div class="sub">BLANCO, TEXAS &mdash; UNDER THE BLOOD MOON</div>
     <ul id="guideList"></ul>
     <button class="close" id="guideClose">Close</button>
+    <button class="close reset" id="guideReset" title="Erase progress and start over">Reset Journey</button>
   </div></div>
 
   <div id="complete"><h3>Canyon Explored!</h3>
@@ -178,7 +201,7 @@
     <h1>TikiBl&atilde;nco</h1>
     <h2>BLOOD MOON CANYON &mdash; BLANCO, TEXAS</h2>
     <button id="enterBtn">ENTER THE CANYON</button>
-    <div class="hint">A tiny tiki adventure &middot; 10 discoveries await &middot; sound on for crickets</div>
+    <div class="hint">A tiny tiki adventure &middot; 22 discoveries &middot; a dog, a Bronco, and a blood moon &middot; sound on for crickets</div>
   </div></div>
 
 <script type="module" src="js/game.js"></script>
