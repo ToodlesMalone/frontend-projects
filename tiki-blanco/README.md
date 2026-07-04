@@ -1,9 +1,10 @@
-# TikiBlãnco — Blood Moon Canyon
+# TikiBlänco — Blood Moon Canyon
 
-An interactive, explorable 3D world built from the TikiBlãnco poster (Blanco,
+An interactive, explorable 3D world built from the TikiBlänco poster (Blanco,
 Texas), in the spirit of N64-era Zelda with a dash of Minecraft. You wander
 the canyon as a little tiki man, drive a green Bronco, and track down all
-**22 discoveries** — including a few secrets.
+**25 discoveries** — including a few secrets. `play.html` is the game-night
+menu: pick Tiki Snake or Blood Moon Canyon.
 
 ## Play
 

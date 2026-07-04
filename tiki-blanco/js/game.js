@@ -1,6 +1,6 @@
 // ============================================================================
-//  TikiBlãnco — Blood Moon Canyon
-//  A tiny explorable 3D rendering of the TikiBlãnco poster (Blanco, Texas).
+//  TikiBlänco — Blood Moon Canyon
+//  A tiny explorable 3D rendering of the TikiBlänco poster (Blanco, Texas).
 //  Low-poly / N64-flavored: chunky pixels, fog, flat shading, vertex colors.
 // ============================================================================
 import * as THREE from './three.module.min.js';
@@ -1034,14 +1034,14 @@ let stageSeen = false;
   magenta.position.set(-3.4, 3.2, 0);
   gx.add(magenta);
 
-  // neon TIKI BLÃNCO sign over the back bar
+  // neon TIKI BLÄNCO sign over the back bar
   const neonTex = canvasTex(256, (ctx, s) => {
     ctx.fillStyle = '#180a10'; ctx.fillRect(0, 0, s, s);
     ctx.shadowColor = '#ff4fae'; ctx.shadowBlur = 22;
     ctx.fillStyle = '#ff9ad0'; ctx.textAlign = 'center';
     ctx.font = 'bold 46px Georgia, serif';
     ctx.fillText('TIKI', s / 2, 108);
-    ctx.fillText('BLÃNCO', s / 2, 168);
+    ctx.fillText('BLÄNCO', s / 2, 168);
   });
   const neon = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.4, 0.08),
     [matFlat, matFlat, matFlat, matFlat, new THREE.MeshBasicMaterial({ map: neonTex }), matFlat]);
@@ -2829,7 +2829,7 @@ function takePhoto() {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#3a1c06';
   ctx.font = `bold ${Math.round(foot * 0.4)}px Georgia, serif`;
-  ctx.fillText('TikiBlãnco — Blood Moon Canyon', c.width / 2, h + b + foot * 0.48);
+  ctx.fillText('TikiBlänco — Blood Moon Canyon', c.width / 2, h + b + foot * 0.48);
   ctx.fillStyle = '#a83a12';
   ctx.font = `italic ${Math.round(foot * 0.2)}px Georgia, serif`;
   ctx.fillText('B L A N C O ,   T E X A S', c.width / 2, h + b + foot * 0.8);
