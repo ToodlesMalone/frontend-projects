@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TikiBlänco — Blood Moon Canyon</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="description" content="Explore the TikiBlänco poster as a little tiki man — a retro low-poly adventure in Blanco, Texas.">
+<style>
+  :root{
+    --parchment:#efe3c8;
+    --ink:#2a1608;
+    --rust:#a83a12;
+    --ember:#ff7a33;
+    --shadow:#120803;
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ width:100%; height:100%; overflow:hidden; background:#0a0503; }
+  body{ font-family:Georgia,'Times New Roman',serif; color:var(--parchment);
+        touch-action:none; user-select:none; -webkit-user-select:none; }
+  #game{ position:fixed; inset:0; }
+  #game canvas{ width:100%; height:100%; display:block; image-rendering:pixelated; image-rendering:crisp-edges; }
+
+  /* ---------- Title screen ---------- */
+  #title{
+    position:fixed; inset:0; z-index:50; display:flex; flex-direction:column;
+    align-items:center; justify-content:flex-end; text-align:center;
+    background:#0a0503 url('poster.jpg') center/cover no-repeat;
+    transition:opacity 1.2s ease;
+  }
+  #title::after{ content:''; position:absolute; inset:0;
+    background:linear-gradient(180deg, rgba(10,5,3,.25) 0%, rgba(10,5,3,.0) 35%, rgba(10,5,3,.82) 88%); }
+  #title.hidden{ opacity:0; pointer-events:none; }
+  #title .inner{ position:relative; z-index:1; padding:0 24px calc(42px + env(safe-area-inset-bottom)); max-width:560px; }
+  #title h1{
+    font-size:clamp(34px,7vw,58px); letter-spacing:.04em; color:var(--parchment);
+    text-shadow:0 3px 0 var(--shadow), 0 0 28px rgba(255,90,30,.45);
+    font-weight:700;
+  }
+  #title h2{
+    font-size:clamp(14px,3vw,20px); font-style:italic; font-weight:400;
+    color:#e8b98a; margin:6px 0 20px; text-shadow:0 2px 0 var(--shadow);
+    letter-spacing:.14em;
+  }
+  #enterBtn{
+    font-family:inherit; font-size:clamp(16px,3.4vw,21px); letter-spacing:.1em;
+    color:var(--parchment); background:linear-gradient(180deg,#8a3510,#5c1f08);
+    border:2px solid #d8b98c; border-radius:8px; padding:14px 34px; cursor:pointer;
+    box-shadow:0 4px 0 var(--shadow), 0 0 24px rgba(255,110,40,.35);
+    animation:pulse 2.2s ease-in-out infinite;
+  }
+  #enterBtn:active{ transform:translateY(3px); box-shadow:0 1px 0 var(--shadow); }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 4px 0 var(--shadow),0 0 16px rgba(255,110,40,.25);}
+                    50%{ box-shadow:0 4px 0 var(--shadow),0 0 34px rgba(255,130,50,.55);} }
+  #title .hint{ margin-top:14px; font-size:12px; color:#cfa87a; opacity:.85; letter-spacing:.06em; }
+  .tEmber{
+    position:absolute; bottom:-10px; width:5px; height:5px; border-radius:50%; z-index:1;
+    background:radial-gradient(circle, #ffd77a 0%, rgba(255,122,51,.85) 45%, rgba(255,122,51,0) 75%);
+    animation:emberRise linear infinite; pointer-events:none;
+  }
+  @keyframes emberRise{
+    0%{ transform:translate(0,0) scale(1); opacity:0; }
+    8%{ opacity:.9; }
+    50%{ transform:translate(14px,-45vh) scale(.8); opacity:.55; }
+    100%{ transform:translate(-10px,-92vh) scale(.3); opacity:0; }
+  }
+
+  /* ---------- HUD ---------- */
+  #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity .8s ease .6s; }
+  #hud.on{ opacity:1; }
+  .hudCard{
+    background:rgba(18,8,3,.72); border:1px solid rgba(216,185,140,.5); border-radius:8px;
+    padding:8px 12px; backdrop-filter:blur(2px);
+  }
+  #logo{ position:absolute; top:calc(10px + env(safe-area-inset-top)); left:12px; }
+  #logo b{ display:block; font-size:17px; letter-spacing:.06em; color:var(--parchment); }
+  #logo span{ display:block; font-size:10.5px; font-style:italic; color:#dd9a5b; letter-spacing:.14em; }
+  #counter{ position:absolute; top:calc(10px + env(safe-area-inset-top)); right:12px; text-align:right; pointer-events:auto; cursor:pointer; }
+  #counter b{ font-size:16px; color:var(--ember); }
+  #counter span{ font-size:11px; letter-spacing:.08em; color:#e6cfa2; }
+  #muteBtn{
+    position:absolute; top:calc(64px + env(safe-area-inset-top)); right:12px; pointer-events:auto; cursor:pointer;
+    width:38px; height:34px; display:flex; align-items:center; justify-content:center; font-size:16px;
+  }
+  #ctrlHint{
+    position:absolute; bottom:calc(14px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%);
+    font-size:12.5px; letter-spacing:.06em; color:#e6cfa2; white-space:nowrap;
+    transition:opacity 1s ease;
+  }
+  #ctrlHint.fade{ opacity:0; }
+
+  /* ---------- Discovery popup ---------- */
+  #popup{
+    position:fixed; left:50%; top:calc(16px + env(safe-area-inset-top) + 54px); transform:translateX(-50%) translateY(-12px);
+    z-index:30; width:min(400px, calc(100vw - 32px));
+    background:linear-gradient(180deg,#f2e6ca,#e5d3ab);
+    color:var(--ink); border:2px solid #6b3d16; border-radius:10px;
+    box-shadow:0 6px 0 rgba(0,0,0,.45), inset 0 0 40px rgba(120,70,20,.18);
+    padding:14px 18px 15px; opacity:0; pointer-events:none;
+    transition:opacity .35s ease, transform .35s ease;
+  }
+  #popup.show{ opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; cursor:pointer; }
+  #popup .kicker{ font-size:10px; letter-spacing:.22em; color:var(--rust); text-transform:uppercase; }
+  #popup h3{ font-size:21px; margin:3px 0 6px; color:#3a1c06; }
+  #popup p{ font-size:13.5px; line-height:1.45; font-style:italic; color:#4a2a10; }
+
+  /* ---------- Field guide ---------- */
+  #guide{
+    position:fixed; inset:0; z-index:40; display:none; align-items:center; justify-content:center;
+    background:rgba(8,4,2,.7); pointer-events:auto;
+  }
+  #guide.show{ display:flex; }
+  #guide .book{
+    width:min(430px, calc(100vw - 36px)); max-height:78vh; overflow-y:auto;
+    background:linear-gradient(180deg,#f2e6ca,#e2cfa5); color:var(--ink);
+    border:2px solid #6b3d16; border-radius:12px; padding:20px 22px;
+    box-shadow:0 10px 0 rgba(0,0,0,.5);
+  }
+  #guide h3{ text-align:center; font-size:20px; color:#3a1c06; letter-spacing:.06em; margin-bottom:2px; }
+  #guide .sub{ text-align:center; font-size:11px; font-style:italic; color:var(--rust); margin-bottom:12px; letter-spacing:.1em; }
+  #guide ul{ list-style:none; }
+  #guide li{ padding:7px 4px; border-bottom:1px dashed rgba(107,61,22,.35); font-size:14.5px; display:flex; gap:10px; align-items:center; }
+  #guide li .dot{ width:12px; text-align:center; }
+  #guide li.found .dot{ color:#0a6b2a; }
+  #guide li.unfound{ color:#9b7a4e; font-style:italic; }
+  #guide .close{ display:block; margin:14px auto 0; font-family:inherit; font-size:14px; padding:8px 26px;
+    background:linear-gradient(180deg,#8a3510,#5c1f08); color:var(--parchment);
+    border:1.5px solid #d8b98c; border-radius:7px; cursor:pointer; letter-spacing:.08em; }
+
+  /* ---------- Completion banner ---------- */
+  #complete{
+    position:fixed; left:50%; top:38%; transform:translate(-50%,-50%) scale(.9); z-index:35;
+    width:min(430px, calc(100vw - 36px)); text-align:center;
+    background:linear-gradient(180deg,#f2e6ca,#e5d3ab); color:var(--ink);
+    border:3px solid #6b3d16; border-radius:14px; padding:22px 24px;
+    box-shadow:0 8px 0 rgba(0,0,0,.5), 0 0 60px rgba(255,120,40,.55);
+    opacity:0; pointer-events:none; transition:opacity .6s ease, transform .6s ease;
+  }
+  #complete.show{ opacity:1; transform:translate(-50%,-50%) scale(1); pointer-events:auto; cursor:pointer; }
+  #complete h3{ font-size:24px; color:#3a1c06; margin-bottom:8px; }
+  #complete p{ font-size:14.5px; font-style:italic; line-height:1.5; color:#4a2a10; }
+
+  /* ---------- Touch controls ---------- */
+  #stick{ position:fixed; z-index:25; width:110px; height:110px; border-radius:50%;
+    border:2px solid rgba(216,185,140,.5); background:rgba(18,8,3,.35); display:none; pointer-events:none; }
+  #stickKnob{ position:absolute; left:50%; top:50%; width:46px; height:46px; margin:-23px 0 0 -23px;
+    border-radius:50%; background:rgba(216,185,140,.55); border:2px solid rgba(240,220,180,.8); }
+  #jumpBtn{
+    position:fixed; right:20px; bottom:calc(46px + env(safe-area-inset-bottom)); z-index:25;
+    width:74px; height:74px; border-radius:50%; display:none; align-items:center; justify-content:center;
+    background:rgba(18,8,3,.55); border:2px solid rgba(216,185,140,.6);
+    color:var(--parchment); font-family:inherit; font-size:13px; letter-spacing:.08em; pointer-events:auto;
+  }
+  body.touch #jumpBtn{ display:flex; }
+
+  /* discovery tracker compass */
+  #tracker{
+    position:fixed; left:14px; bottom:calc(14px + env(safe-area-inset-bottom)); z-index:22;
+    display:none; align-items:center; gap:8px; font-size:12.5px; letter-spacing:.06em; color:#e6cfa2;
+  }
+  #tracker #trackArrow{ display:inline-block; color:var(--ember); font-size:15px; transition:transform .12s linear; }
+
+  /* drive / exit button */
+  #driveBtn{
+    position:fixed; right:20px; bottom:calc(136px + env(safe-area-inset-bottom)); z-index:25;
+    display:none; padding:14px 18px; border-radius:50%; width:74px; height:74px;
+    background:linear-gradient(180deg,#2e6b3a,#1c4a24); border:2px solid #d8b98c;
+    color:var(--parchment); font-family:inherit; font-size:13px; letter-spacing:.08em; cursor:pointer;
+    box-shadow:0 3px 0 var(--shadow);
+  }
+  #driveBtn:active{ transform:translateY(2px); }
+  .actBtn{
+    position:fixed; right:20px; z-index:25; display:none;
+    width:74px; height:74px; border-radius:50%;
+    background:linear-gradient(180deg,#6b4416,#4a2c0c); border:2px solid #d8b98c;
+    color:var(--parchment); font-family:inherit; font-size:12.5px; letter-spacing:.08em; cursor:pointer;
+    box-shadow:0 3px 0 var(--shadow);
+  }
+  .actBtn:active{ transform:translateY(2px); }
+  #fishBtn{ bottom:calc(226px + env(safe-area-inset-bottom)); }
+  #fetchBtn{ bottom:calc(316px + env(safe-area-inset-bottom)); }
+  #petBtn{ bottom:calc(406px + env(safe-area-inset-bottom)); background:linear-gradient(180deg,#8a3560,#5c1f3a); }
+  #counter.bump{ animation:cbump .45s ease; }
+  @keyframes cbump{ 0%{ transform:scale(1); } 40%{ transform:scale(1.16); } 100%{ transform:scale(1); } }
+  #boostChip{
+    position:fixed; left:50%; transform:translateX(-50%); top:calc(10px + env(safe-area-inset-top));
+    z-index:22; display:none; font-size:14px; color:#f2c2d8; letter-spacing:.06em;
+  }
+  #photoBtn{
+    position:absolute; top:calc(110px + env(safe-area-inset-top)); right:12px; pointer-events:auto; cursor:pointer;
+    width:38px; height:34px; display:flex; align-items:center; justify-content:center; font-size:15px;
+  }
+
+  #guide .reset{ background:linear-gradient(180deg,#5a5048,#3a322c); font-size:12px; padding:6px 18px; margin-top:8px; }
+
+  /* vignette for mood */
+  #vignette{ position:fixed; inset:0; z-index:15; pointer-events:none;
+    background:radial-gradient(ellipse at center, transparent 55%, rgba(8,3,1,.55) 100%); }
+</style>
+</head>
+<body>
+  <div id="game"></div>
+  <div id="vignette"></div>
+
+  <div id="hud">
+    <div id="logo" class="hudCard"><b>TikiBl&auml;nco</b><span>BLOOD MOON CANYON</span></div>
+    <div id="counter" class="hudCard" title="Open field guide"><b id="count">0</b><b style="color:#e6cfa2">/25</b><br><span>DISCOVERIES &#9662;</span></div>
+    <div id="muteBtn" class="hudCard" title="Toggle sound">&#128266;</div>
+    <div id="photoBtn" class="hudCard" title="Take a framed photo (P)">&#128247;</div>
+    <div id="ctrlHint" class="hudCard"></div>
+  </div>
+
+  <div id="popup"><div class="kicker" id="popKicker">Discovery</div><h3 id="popTitle"></h3><p id="popText"></p></div>
+
+  <div id="tracker" class="hudCard"><span id="trackArrow">&#9650;</span><span id="trackDist"></span></div>
+  <div id="boostChip" class="hudCard"></div>
+  <button id="driveBtn">DRIVE</button>
+  <button id="fishBtn" class="actBtn">FISH</button>
+  <button id="fetchBtn" class="actBtn">FETCH</button>
+  <button id="petBtn" class="actBtn">PET</button>
+
+  <div id="guide"><div class="book">
+    <h3>Field Guide</h3><div class="sub">BLANCO, TEXAS &mdash; UNDER THE BLOOD MOON</div>
+    <ul id="guideList"></ul>
+    <div id="guideFoot" style="text-align:center;font-size:11.5px;font-style:italic;color:#7a5426;margin-top:10px"></div>
+    <button class="close" id="guideClose">Close</button>
+    <button class="close reset" id="guideReset" title="Erase progress and start over">Reset Journey</button>
+  </div></div>
+
+  <div id="complete"><h3>Canyon Explored!</h3>
+    <p>You&rsquo;ve wandered every corner of Blood Moon Canyon and lived to tell it.
+    The Great Tiki&rsquo;s eyes burn bright in your honor. Somebody is waiting for you at the grotto&hellip;<br>
+    <b id="completeTime" style="display:block;margin-top:8px;color:#a83a12"></b>
+    <br><b>Aloha, y&rsquo;all. &mdash; TikiBl&auml;nco</b></p></div>
+
+  <div id="stick"><div id="stickKnob"></div></div>
+  <button id="jumpBtn">JUMP</button>
+
+  <div id="title">
+    <i class="tEmber" style="left:12%;animation-duration:9s;animation-delay:0s"></i>
+    <i class="tEmber" style="left:28%;animation-duration:12s;animation-delay:3s"></i>
+    <i class="tEmber" style="left:55%;animation-duration:8s;animation-delay:1.5s"></i>
+    <i class="tEmber" style="left:71%;animation-duration:11s;animation-delay:5s"></i>
+    <i class="tEmber" style="left:87%;animation-duration:10s;animation-delay:2.2s"></i>
+    <div class="inner">
+    <h1>TikiBl&auml;nco</h1>
+    <h2>BLOOD MOON CANYON &mdash; BLANCO, TEXAS</h2>
+    <button id="enterBtn">ENTER THE CANYON</button>
+    <div class="hint">A tiny tiki adventure &middot; 25 discoveries &middot; dogs, a Bronco, a canoe, and a blood moon &middot; sound on for crickets</div>
+  </div></div>
+
+<script type="module" src="js/game.js"></script>
+</body>
+</html>

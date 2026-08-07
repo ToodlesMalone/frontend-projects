@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TikiBlänco — Tiki Snake</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+  :root{ --parchment:#efe3c8; --ink:#2a1608; --rust:#a83a12; --ember:#ff7a33; --shadow:#120803; }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ width:100%; height:100%; overflow:hidden; }
+  body{
+    font-family:Georgia,'Times New Roman',serif; color:var(--parchment); background:#140806;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    touch-action:none; user-select:none; -webkit-user-select:none; min-height:100vh;
+  }
+  #hud{ display:flex; gap:18px; align-items:baseline; margin-bottom:10px; }
+  #hud b{ color:var(--ember); font-size:22px; }
+  #hud span{ font-size:12px; letter-spacing:.14em; color:#e6cfa2; }
+  #hud .title{ font-size:16px; letter-spacing:.05em; color:var(--parchment); margin-right:6px; }
+  canvas{
+    background:#1c0d06; border:3px solid #6b3d16; border-radius:10px;
+    box-shadow:0 6px 0 var(--shadow), 0 0 34px rgba(255,110,40,.25);
+    image-rendering:pixelated;
+  }
+  #foot{ margin-top:12px; font-size:11.5px; letter-spacing:.1em; color:#cfa87a; font-style:italic; text-align:center; }
+  #foot a{ color:var(--ember); text-decoration:none; }
+  #over{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%) scale(.9); z-index:5;
+    width:min(360px, calc(100vw - 40px)); text-align:center;
+    background:linear-gradient(180deg,#f2e6ca,#e5d3ab); color:var(--ink);
+    border:3px solid #6b3d16; border-radius:14px; padding:22px;
+    box-shadow:0 8px 0 rgba(0,0,0,.5); opacity:0; pointer-events:none;
+    transition:opacity .4s ease, transform .4s ease;
+  }
+  #over.show{ opacity:1; transform:translate(-50%,-50%) scale(1); pointer-events:auto; }
+  #over h3{ font-size:24px; color:#3a1c06; margin-bottom:6px; }
+  #over p{ font-size:14px; font-style:italic; color:#4a2a10; line-height:1.5; }
+  #over button{
+    margin-top:14px; font-family:inherit; font-size:15px; letter-spacing:.1em; padding:10px 28px;
+    background:linear-gradient(180deg,#8a3510,#5c1f08); color:var(--parchment);
+    border:2px solid #d8b98c; border-radius:8px; cursor:pointer; box-shadow:0 3px 0 var(--shadow);
+  }
+</style>
+</head>
+<body>
+  <div id="hud">
+    <span class="title">TikiBl&auml;nco &mdash; TIKI SNAKE</span>
+    <b id="score">0</b><span>MUGS</span>
+    <b id="best" style="color:#e6cfa2">0</b><span>BEST</span>
+  </div>
+  <canvas id="c" width="440" height="440"></canvas>
+  <div id="foot">ARROWS / WASD or SWIPE &middot; eat the glowing mugs &middot; don&rsquo;t bite yourself<br>
+    <a href="play.html">&larr; back to game night</a></div>
+  <div id="over">
+    <h3 id="overTitle">Snake Down!</h3>
+    <p id="overText"></p>
+    <button id="again">SLITHER AGAIN</button>
+  </div>
+<script>
+(function () {
+  'use strict';
+  var cv = document.getElementById('c'), ctx = cv.getContext('2d');
+  var N = 22, CELL = cv.width / N;
+  var scoreEl = document.getElementById('score'), bestEl = document.getElementById('best');
+  var overEl = document.getElementById('over'), overText = document.getElementById('overText');
+  var mugColors = ['#7dff9a', '#ffb347', '#ff6a55', '#5fd8ff', '#ff8ad8'];
+  var best = 0;
+  try { best = parseInt(localStorage.getItem('tikiblanco-snake-best') || '0', 10) || 0; } catch (e) {}
+  bestEl.textContent = best;
+
+  // fit canvas to smaller screens
+  function fit() {
+    var s = Math.min(440, window.innerWidth - 28, window.innerHeight - 150);
+    cv.style.width = s + 'px';
+    cv.style.height = s + 'px';
+  }
+  fit();
+  window.addEventListener('resize', fit);
+
+  var snake, dir, nextDir, mug, score, dead, tickMs, moonPulse = 0, rattleTail;
+  function reset() {
+    snake = [{ x: 11, y: 12 }, { x: 11, y: 13 }, { x: 11, y: 14 }];
+    dir = { x: 0, y: -1 };
+    nextDir = dir;
+    score = 0;
+    dead = false;
+    tickMs = 150;
+    scoreEl.textContent = '0';
+    placeMug();
+    overEl.classList.remove('show');
+  }
+  function placeMug() {
+    do {
+      mug = { x: Math.floor(Math.random() * N), y: Math.floor(Math.random() * N),
+        c: mugColors[Math.floor(Math.random() * mugColors.length)] };
+    } while (snake.some(function (s) { return s.x === mug.x && s.y === mug.y; }));
+  }
+
+  // simple synth for chomps and death rattle
+  var AC = window.AudioContext || window.webkitAudioContext, ac = null;
+  function beep(f, dur, vol, type) {
+    if (!ac) return;
+    var o = ac.createOscillator(), g = ac.createGain(), t = ac.currentTime;
+    o.type = type || 'square'; o.frequency.value = f;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(vol || 0.05, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + (dur || 0.12));
+    o.connect(g); g.connect(ac.destination);
+    o.start(t); o.stop(t + (dur || 0.12) + 0.05);
+  }
+  function ensureAudio() { if (!ac && AC) ac = new AC(); if (ac && ac.state === 'suspended') ac.resume(); }
+
+  function setDir(x, y) {
+    ensureAudio();
+    if (dead) return;
+    if (x === -dir.x && y === -dir.y) return; // no 180s
+    nextDir = { x: x, y: y };
+  }
+  document.addEventListener('keydown', function (e) {
+    var k = e.code;
+    if (k === 'ArrowUp' || k === 'KeyW') { setDir(0, -1); e.preventDefault(); }
+    else if (k === 'ArrowDown' || k === 'KeyS') { setDir(0, 1); e.preventDefault(); }
+    else if (k === 'ArrowLeft' || k === 'KeyA') { setDir(-1, 0); e.preventDefault(); }
+    else if (k === 'ArrowRight' || k === 'KeyD') { setDir(1, 0); e.preventDefault(); }
+    else if (dead && (k === 'Space' || k === 'Enter')) reset();
+  });
+  var ts = null;
+  document.addEventListener('touchstart', function (e) {
+    ensureAudio();
+    ts = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    if (!ts) return;
+    var dx = e.changedTouches[0].clientX - ts.x, dy = e.changedTouches[0].clientY - ts.y;
+    if (Math.abs(dx) < 18 && Math.abs(dy) < 18) return;
+    if (Math.abs(dx) > Math.abs(dy)) setDir(dx > 0 ? 1 : -1, 0);
+    else setDir(0, dy > 0 ? 1 : -1);
+    ts = null;
+  }, { passive: true });
+  document.getElementById('again').addEventListener('click', reset);
+
+  var acc = 0, last = 0;
+  function loop(t) {
+    requestAnimationFrame(loop);
+    var dt = Math.min(t - last, 100);
+    last = t;
+    moonPulse += dt * 0.001;
+    if (!dead) {
+      acc += dt;
+      while (acc >= tickMs) { acc -= tickMs; step(); }
+    }
+    draw();
+  }
+  function step() {
+    dir = nextDir;
+    var head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+    // canyon walls are solid — and so are you
+    if (head.x < 0 || head.y < 0 || head.x >= N || head.y >= N ||
+        snake.some(function (s) { return s.x === head.x && s.y === head.y; })) {
+      dead = true;
+      beep(140, 0.4, 0.08, 'sawtooth');
+      beep(90, 0.6, 0.08, 'sawtooth');
+      var isBest = score > best;
+      if (isBest) {
+        best = score;
+        try { localStorage.setItem('tikiblanco-snake-best', String(best)); } catch (e) {}
+        bestEl.textContent = best;
+      }
+      overText.textContent = score + ' mug' + (score === 1 ? '' : 's') + ' for the shelf.' +
+        (isBest ? ' A new best — Trader Blanco nods approvingly.' : ' The rattlesnake naps it off.');
+      overEl.classList.add('show');
+      return;
+    }
+    snake.unshift(head);
+    if (head.x === mug.x && head.y === mug.y) {
+      score++;
+      scoreEl.textContent = score;
+      beep(660 + Math.min(score, 20) * 18, 0.1, 0.05);
+      beep(990 + Math.min(score, 20) * 18, 0.14, 0.03);
+      tickMs = Math.max(70, 150 - score * 3);
+      placeMug();
+    } else {
+      snake.pop();
+    }
+  }
+  function draw() {
+    // night canyon backdrop
+    ctx.fillStyle = '#1c0d06';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    // blood moon
+    var mx = cv.width * 0.78, my = cv.height * 0.2;
+    var g = ctx.createRadialGradient(mx, my, 8, mx, my, 90);
+    g.addColorStop(0, 'rgba(220,60,25,' + (0.5 + Math.sin(moonPulse) * 0.08) + ')');
+    g.addColorStop(1, 'rgba(120,20,8,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = '#c33018';
+    ctx.beginPath(); ctx.arc(mx, my, 26, 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(120,24,10,0.5)';
+    ctx.beginPath(); ctx.arc(mx - 8, my - 5, 7, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx + 9, my + 8, 5, 0, 7); ctx.fill();
+    // faint grid like flagstones
+    ctx.strokeStyle = 'rgba(90,50,25,0.16)';
+    ctx.lineWidth = 1;
+    for (var i = 1; i < N; i++) {
+      ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, cv.height); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(cv.width, i * CELL); ctx.stroke();
+    }
+    // the glowing mug (it bobs, because it knows it's wanted)
+    var px = mug.x * CELL, py = mug.y * CELL + Math.sin(moonPulse * 4 + mug.x) * 2;
+    ctx.shadowColor = mug.c; ctx.shadowBlur = 14;
+    ctx.fillStyle = mug.c;
+    ctx.fillRect(px + 5, py + 4, CELL - 10, CELL - 7);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillRect(px + 7, py + 7, CELL - 14, 3);          // mug face notch
+    ctx.strokeStyle = mug.c;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(px + CELL - 7, py + 7, 4, CELL - 14); // handle
+    // the diamondback
+    for (var s = snake.length - 1; s >= 0; s--) {
+      var seg = snake[s];
+      var t = s / Math.max(1, snake.length - 1);
+      ctx.fillStyle = s === 0 ? '#8a6534' : (s % 2 ? '#6b4c2a' : '#7c5a33');
+      var inset = s === 0 ? 2 : 3 + t * 2;
+      ctx.fillRect(seg.x * CELL + inset, seg.y * CELL + inset, CELL - inset * 2, CELL - inset * 2);
+      if (s === 0) { // eyes
+        ctx.fillStyle = '#ffcc44';
+        var ex = dir.x, ey = dir.y;
+        ctx.fillRect(seg.x * CELL + CELL / 2 - 5 + ex * 4 - ey * 4, seg.y * CELL + CELL / 2 - 5 + ey * 4 + ex * 4, 3, 3);
+        ctx.fillRect(seg.x * CELL + CELL / 2 + 2 + ex * 4 + ey * 4, seg.y * CELL + CELL / 2 - 5 + ey * 4 - ex * 4, 3, 3);
+      }
+      if (s === snake.length - 1 && snake.length > 3) { // rattle
+        ctx.fillStyle = '#b99b6a';
+        ctx.fillRect(seg.x * CELL + CELL / 2 - 2, seg.y * CELL + CELL / 2 - 2, 4, 4);
+      }
+    }
+  }
+  reset();
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

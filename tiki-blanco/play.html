@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TikiBlänco — Play</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Pick your game: Tiki Snake or Blood Moon Canyon.">
+<style>
+  :root{ --parchment:#efe3c8; --ink:#2a1608; --rust:#a83a12; --ember:#ff7a33; --shadow:#120803; }
+  *{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{ min-height:100%; }
+  body{
+    font-family:Georgia,'Times New Roman',serif; color:var(--parchment);
+    background:#0a0503 url('poster.jpg') center/cover fixed no-repeat;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:100vh; padding:32px 18px calc(32px + env(safe-area-inset-bottom));
+    position:relative;
+  }
+  body::before{ content:''; position:fixed; inset:0;
+    background:linear-gradient(180deg, rgba(10,5,3,.78) 0%, rgba(10,5,3,.62) 45%, rgba(10,5,3,.85) 100%); }
+  .wrap{ position:relative; z-index:1; width:min(760px,100%); text-align:center; }
+  h1{
+    font-size:clamp(34px,7vw,56px); letter-spacing:.04em;
+    text-shadow:0 3px 0 var(--shadow), 0 0 28px rgba(255,90,30,.45);
+  }
+  .sub{
+    font-size:clamp(13px,2.6vw,17px); font-style:italic; color:#e8b98a;
+    letter-spacing:.16em; margin:6px 0 34px; text-shadow:0 2px 0 var(--shadow);
+  }
+  .games{ display:flex; gap:22px; justify-content:center; flex-wrap:wrap; }
+  .card{
+    flex:1 1 280px; max-width:340px; text-decoration:none; color:var(--parchment);
+    background:linear-gradient(180deg, rgba(38,16,6,.92), rgba(20,9,4,.94));
+    border:2px solid #d8b98c; border-radius:14px; padding:26px 22px 24px;
+    box-shadow:0 6px 0 var(--shadow), 0 0 24px rgba(255,110,40,.18);
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .card:hover, .card:focus-visible{
+    transform:translateY(-4px);
+    box-shadow:0 10px 0 var(--shadow), 0 0 42px rgba(255,130,50,.4);
+    outline:none;
+  }
+  .card:active{ transform:translateY(1px); box-shadow:0 3px 0 var(--shadow); }
+  .card .glyph{ font-size:52px; line-height:1; margin-bottom:14px; display:block;
+    filter:drop-shadow(0 3px 0 rgba(0,0,0,.5)); transition:transform .18s ease; }
+  .card:hover .glyph{ transform:scale(1.18) rotate(-7deg); }
+  .card h2{ font-size:clamp(20px,4vw,26px); letter-spacing:.05em; color:var(--parchment); }
+  .card .tag{ display:block; font-size:11px; letter-spacing:.2em; color:var(--ember);
+    text-transform:uppercase; margin:4px 0 12px; }
+  .card p{ font-size:13.5px; line-height:1.5; font-style:italic; color:#dcc49a; }
+  .card .go{
+    display:inline-block; margin-top:16px; font-size:14px; letter-spacing:.12em;
+    padding:10px 26px; border-radius:8px; color:var(--parchment);
+    background:linear-gradient(180deg,#8a3510,#5c1f08); border:1.5px solid #d8b98c;
+    box-shadow:0 3px 0 var(--shadow);
+  }
+  .foot{ position:relative; z-index:1; margin-top:36px; font-size:11.5px; font-style:italic;
+    color:#cfa87a; letter-spacing:.14em; }
+  .tEmber{
+    position:fixed; bottom:-10px; width:5px; height:5px; border-radius:50%; z-index:1;
+    background:radial-gradient(circle, #ffd77a 0%, rgba(255,122,51,.85) 45%, rgba(255,122,51,0) 75%);
+    animation:emberRise linear infinite; pointer-events:none;
+  }
+  @keyframes emberRise{
+    0%{ transform:translate(0,0) scale(1); opacity:0; }
+    8%{ opacity:.9; }
+    50%{ transform:translate(14px,-45vh) scale(.8); opacity:.55; }
+    100%{ transform:translate(-10px,-92vh) scale(.3); opacity:0; }
+  }
+</style>
+</head>
+<body>
+  <i class="tEmber" style="left:10%;animation-duration:9s;animation-delay:0s"></i>
+  <i class="tEmber" style="left:32%;animation-duration:12s;animation-delay:3s"></i>
+  <i class="tEmber" style="left:58%;animation-duration:8s;animation-delay:1.5s"></i>
+  <i class="tEmber" style="left:78%;animation-duration:11s;animation-delay:5s"></i>
+  <i class="tEmber" style="left:92%;animation-duration:10s;animation-delay:2.2s"></i>
+  <div class="wrap">
+    <h1>TikiBl&auml;nco</h1>
+    <div class="sub">GAME NIGHT &mdash; BLANCO, TEXAS &mdash; PICK YOUR POISON</div>
+    <div class="games">
+      <a class="card" href="snake.html">
+        <span class="glyph">&#128013;</span>
+        <h2>Tiki Snake</h2>
+        <span class="tag">Classic &middot; 1 minute to learn</span>
+        <p>You are the diamondback. Eat the glowing tiki mugs, grow long, don&rsquo;t bite yourself.
+        The canyon classic.</p>
+        <span class="go">PLAY SNAKE</span>
+      </a>
+      <a class="card" href="index.html">
+        <span class="glyph">&#127763;</span>
+        <h2>Blood Moon Canyon</h2>
+        <span class="tag">3D Adventure &middot; 25 discoveries</span>
+        <p>Walk the poster. A tiki man, two good dogs, a green Bronco, a hidden tiki bar,
+        and every cryptid in the Hill Country.</p>
+        <span class="go">ENTER THE CANYON</span>
+      </a>
+    </div>
+    <div class="foot">ALOHA, Y&rsquo;ALL &middot; TIKIBLANCO.ONLINE</div>
+  </div>
+</body>
+</html>
