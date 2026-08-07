@@ -42,7 +42,8 @@
   }
   .card:active{ transform:translateY(1px); box-shadow:0 3px 0 var(--shadow); }
   .card .glyph{ font-size:52px; line-height:1; margin-bottom:14px; display:block;
-    filter:drop-shadow(0 3px 0 rgba(0,0,0,.5)); }
+    filter:drop-shadow(0 3px 0 rgba(0,0,0,.5)); transition:transform .18s ease; }
+  .card:hover .glyph{ transform:scale(1.18) rotate(-7deg); }
   .card h2{ font-size:clamp(20px,4vw,26px); letter-spacing:.05em; color:var(--parchment); }
   .card .tag{ display:block; font-size:11px; letter-spacing:.2em; color:var(--ember);
     text-transform:uppercase; margin:4px 0 12px; }

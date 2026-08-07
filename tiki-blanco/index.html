@@ -169,6 +169,9 @@
   .actBtn:active{ transform:translateY(2px); }
   #fishBtn{ bottom:calc(226px + env(safe-area-inset-bottom)); }
   #fetchBtn{ bottom:calc(316px + env(safe-area-inset-bottom)); }
+  #petBtn{ bottom:calc(406px + env(safe-area-inset-bottom)); background:linear-gradient(180deg,#8a3560,#5c1f3a); }
+  #counter.bump{ animation:cbump .45s ease; }
+  @keyframes cbump{ 0%{ transform:scale(1); } 40%{ transform:scale(1.16); } 100%{ transform:scale(1); } }
   #boostChip{
     position:fixed; left:50%; transform:translateX(-50%); top:calc(10px + env(safe-area-inset-top));
     z-index:22; display:none; font-size:14px; color:#f2c2d8; letter-spacing:.06em;
@@ -204,6 +207,7 @@
   <button id="driveBtn">DRIVE</button>
   <button id="fishBtn" class="actBtn">FISH</button>
   <button id="fetchBtn" class="actBtn">FETCH</button>
+  <button id="petBtn" class="actBtn">PET</button>
 
   <div id="guide"><div class="book">
     <h3>Field Guide</h3><div class="sub">BLANCO, TEXAS &mdash; UNDER THE BLOOD MOON</div>

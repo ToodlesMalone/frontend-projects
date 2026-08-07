@@ -20,7 +20,10 @@ locally in `js/three.module.min.js` (r160, MIT license).
 | Run | hold Shift | push joystick to the edge |
 | Look | click + drag | drag right side of screen |
 | Jump | Space | JUMP button |
-| Drive / exit Bronco | E (or on-screen button) | DRIVE button |
+| Drive / exit Bronco or canoe | E (or on-screen button) | DRIVE / PADDLE button |
+| Honk (in the Bronco) | Space | HONK button |
+| Pet a dog | T | PET button |
+| Fetch / fish / photo | R / F / P | on-screen buttons |
 
 ## The world
 
