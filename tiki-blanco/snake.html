@@ -206,8 +206,8 @@
       ctx.beginPath(); ctx.moveTo(i * CELL, 0); ctx.lineTo(i * CELL, cv.height); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(0, i * CELL); ctx.lineTo(cv.width, i * CELL); ctx.stroke();
     }
-    // the glowing mug
-    var px = mug.x * CELL, py = mug.y * CELL;
+    // the glowing mug (it bobs, because it knows it's wanted)
+    var px = mug.x * CELL, py = mug.y * CELL + Math.sin(moonPulse * 4 + mug.x) * 2;
     ctx.shadowColor = mug.c; ctx.shadowBlur = 14;
     ctx.fillStyle = mug.c;
     ctx.fillRect(px + 5, py + 4, CELL - 10, CELL - 7);

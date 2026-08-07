@@ -54,6 +54,17 @@
   @keyframes pulse{ 0%,100%{ box-shadow:0 4px 0 var(--shadow),0 0 16px rgba(255,110,40,.25);}
                     50%{ box-shadow:0 4px 0 var(--shadow),0 0 34px rgba(255,130,50,.55);} }
   #title .hint{ margin-top:14px; font-size:12px; color:#cfa87a; opacity:.85; letter-spacing:.06em; }
+  .tEmber{
+    position:absolute; bottom:-10px; width:5px; height:5px; border-radius:50%; z-index:1;
+    background:radial-gradient(circle, #ffd77a 0%, rgba(255,122,51,.85) 45%, rgba(255,122,51,0) 75%);
+    animation:emberRise linear infinite; pointer-events:none;
+  }
+  @keyframes emberRise{
+    0%{ transform:translate(0,0) scale(1); opacity:0; }
+    8%{ opacity:.9; }
+    50%{ transform:translate(14px,-45vh) scale(.8); opacity:.55; }
+    100%{ transform:translate(-10px,-92vh) scale(.3); opacity:0; }
+  }
 
   /* ---------- HUD ---------- */
   #hud{ position:fixed; inset:0; z-index:20; pointer-events:none; opacity:0; transition:opacity .8s ease .6s; }
@@ -226,7 +237,13 @@
   <div id="stick"><div id="stickKnob"></div></div>
   <button id="jumpBtn">JUMP</button>
 
-  <div id="title"><div class="inner">
+  <div id="title">
+    <i class="tEmber" style="left:12%;animation-duration:9s;animation-delay:0s"></i>
+    <i class="tEmber" style="left:28%;animation-duration:12s;animation-delay:3s"></i>
+    <i class="tEmber" style="left:55%;animation-duration:8s;animation-delay:1.5s"></i>
+    <i class="tEmber" style="left:71%;animation-duration:11s;animation-delay:5s"></i>
+    <i class="tEmber" style="left:87%;animation-duration:10s;animation-delay:2.2s"></i>
+    <div class="inner">
     <h1>TikiBl&auml;nco</h1>
     <h2>BLOOD MOON CANYON &mdash; BLANCO, TEXAS</h2>
     <button id="enterBtn">ENTER THE CANYON</button>

@@ -486,7 +486,7 @@ let raven, ravenWings;
 
 // -------------------------------------------------------------- rattlesnake
 const SNAKE = { x: 30, z: 44 };
-let snakeHead, snakeRattle, snakeNear = 0;
+let snakeHead, snakeRattle, snakeNear = 0, snakeTongue;
 {
   const grp = new THREE.Group();
   const pts = [];
@@ -508,6 +508,11 @@ let snakeHead, snakeRattle, snakeNear = 0;
     e.position.set(s * 0.13, 0.1, 0.12);
     snakeHead.add(e);
   }
+  snakeTongue = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 0.32),
+    new THREE.MeshBasicMaterial({ color: 0xd8304a }));
+  snakeTongue.position.set(0, 0, 0.4);
+  snakeTongue.scale.z = 0.01;
+  snakeHead.add(snakeTongue);
   const start = pts[0];
   snakeHead.position.set(start.x, start.y + 0.15, start.z);
   snakeHead.userData.baseY = snakeHead.position.y;
@@ -622,6 +627,7 @@ const CLEARINGS = [   // landmark spots scatter must keep clear: {x, z, r(option
   { x: 34, z: 62, r: 7 },          // the Bronco's trailhead
   { x: -66, z: -6, r: 18 },        // the vineyard
   { x: 19, z: 26, r: 5 },          // canoe landing
+  { x: -46, z: 72, r: 6 },         // the old windmill
 ];
 function scatterOK(x, z, buffer = 5) {
   if (Math.abs(x - riverX(z)) < 13) return false;
@@ -866,6 +872,7 @@ const smokes = [];
 // -------------------------------------------- Trader Blanco's Grotto (tiki bar)
 const GROTTO = { x: -58, z: -42 };
 const torchFlames = [];
+let grottoPuffer;
 {
   const gy = terrainH(GROTTO.x, GROTTO.z);
   const grp = new THREE.Group();
@@ -950,6 +957,7 @@ const torchFlames = [];
   puffer.add(puffLight);
   puffer.position.set(-3, 3.2, 0);
   grp.add(puffer);
+  grottoPuffer = puffer;
   // entrance torches
   for (const sz of [-3.2, 3.2]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 2.2, 5), woodD);
@@ -1291,6 +1299,21 @@ let bigfoot, bigfootArm, bigfootWave = 0;
   scene.add(grp);
   addCollider(12, -60, 1.0);
   bigfoot = grp;
+  // a trail of very large footprints from the riverbank into the thicket
+  const printParts = [];
+  const fpGeo = new THREE.CircleGeometry(0.32, 7);
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6;
+    const fx = lerp(riverX(-59) + 7, 11, t);
+    const fz = lerp(-58, -60, t) + Math.sin(t * 6) * 0.6;
+    const side = (i % 2 ? 1 : -1) * 0.45;
+    printParts.push({
+      g: fpGeo.clone(),
+      m: M4(fx + side, terrainH(fx + side, fz) + 0.03, fz, -Math.PI / 2, rand(-0.2, 0.2), 0, 1, 1.55, 1),
+      c: 0x2e1d10
+    });
+  }
+  scene.add(new THREE.Mesh(mergeGeoms(printParts), new THREE.MeshBasicMaterial({ vertexColors: true })));
 }
 
 // chupacabra — glowing eyes in the dark southeast corner
@@ -1317,6 +1340,17 @@ let chupa, chupaEyes = [];
   grp.position.set(58, 0, 60);
   scene.add(grp);
   chupa = makeWanderer(grp, { x: 58, z: 60, r: 8 }, 1.1);
+  // ...and the evidence: picked-clean bones and a goat skull in its corner
+  const evParts = [];
+  for (const [bx, bz, ry] of [[54.5, 56.5, 0.8], [56, 55.5, 2.2]]) {
+    evParts.push({ g: new THREE.CylinderGeometry(0.05, 0.05, 0.7, 5), m: M4(bx, terrainH(bx, bz) + 0.06, bz, 0, ry, Math.PI / 2), c: 0xd8ccb0 });
+    evParts.push({ g: new THREE.SphereGeometry(0.08, 5, 4), m: M4(bx + Math.cos(ry) * 0.35, terrainH(bx, bz) + 0.06, bz - Math.sin(ry) * 0.35), c: 0xd8ccb0 });
+  }
+  const sy = terrainH(55, 57.5) + 0.14;
+  evParts.push({ g: new THREE.SphereGeometry(0.16, 6, 5), m: M4(55, sy, 57.5, 0, 0.6, 0, 1, 0.85, 1.2), c: 0xd8ccb0 });
+  for (const s of [-1, 1])
+    evParts.push({ g: new THREE.ConeGeometry(0.035, 0.22, 4), m: M4(55 + s * 0.12, sy + 0.14, 57.4, 0, 0, s * 0.9), c: 0xc4b89c });
+  scene.add(new THREE.Mesh(mergeGeoms(evParts), matFlat));
 }
 
 // The Watcher — a still figure on the east rim (was he there a moment ago?)
@@ -1729,6 +1763,93 @@ const canoeCollider = { x: 19, z: 26, r: 1.4 };
   scene.add(grp);
   canoeGrp = grp;
   colliders.push(canoeCollider);
+}
+
+// -------------------- the old ranch windmill (turns all night, creaks a little)
+const WINDMILL = { x: -46, z: 72 };
+let windmillRotor, windmillHead;
+{
+  const wy = terrainH(WINDMILL.x, WINDMILL.z);
+  const grp = new THREE.Group();
+  const parts = [];
+  const steel = 0x5a5f66, steelD = 0x3e4248;
+  for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {   // splayed legs
+    const q = new THREE.Quaternion().setFromUnitVectors(V3(0, 1, 0),
+      V3(-sx * 0.75, 7.4, -sz * 0.75).normalize());
+    parts.push({ g: new THREE.BoxGeometry(0.09, 7.6, 0.09),
+      m: new THREE.Matrix4().compose(V3(sx * 0.75 * 0.5, 3.7, sz * 0.75 * 0.5), q, V3(1, 1, 1)), c: steel });
+  }
+  for (const by of [1.8, 3.6, 5.4]) {                               // cross braces
+    const w = lerp(1.35, 0.45, by / 7.4);
+    parts.push({ g: new THREE.BoxGeometry(w * 2, 0.06, 0.06), m: M4(0, by, w), c: steelD });
+    parts.push({ g: new THREE.BoxGeometry(w * 2, 0.06, 0.06), m: M4(0, by, -w), c: steelD });
+    parts.push({ g: new THREE.BoxGeometry(0.06, 0.06, w * 2), m: M4(w, by, 0), c: steelD });
+    parts.push({ g: new THREE.BoxGeometry(0.06, 0.06, w * 2), m: M4(-w, by, 0), c: steelD });
+  }
+  parts.push({ g: new THREE.BoxGeometry(0.9, 0.1, 0.9), m: M4(0, 7.5, 0), c: steelD }); // platform
+  grp.add(new THREE.Mesh(mergeGeoms(parts), matFlat));
+  // rotor head: 14-blade fan + tail vane, yaws gently with the wind
+  windmillHead = new THREE.Group();
+  windmillRotor = new THREE.Group();
+  const bladeGeo = new THREE.BoxGeometry(0.34, 1.15, 0.04);
+  bladeGeo.translate(0, 0.85, 0);
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x8a8f96, flatShading: true, roughness: 0.7 });
+  for (let i = 0; i < 14; i++) {
+    const b = new THREE.Mesh(bladeGeo, bladeMat);
+    b.rotation.z = (i / 14) * Math.PI * 2;
+    b.rotation.y = 0.4; // blade pitch
+    windmillRotor.add(b);
+  }
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.24, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3e4248, flatShading: true }));
+  hub.rotation.x = Math.PI / 2;
+  windmillRotor.add(hub);
+  windmillRotor.position.z = 0.55;
+  windmillHead.add(windmillRotor);
+  const vane = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.8, 1.3),
+    new THREE.MeshStandardMaterial({ color: 0x7a4423, flatShading: true }));
+  vane.position.set(0, 0.15, -1.3);
+  windmillHead.add(vane);
+  windmillHead.position.y = 7.9;
+  grp.add(windmillHead);
+  grp.position.set(WINDMILL.x, wy, WINDMILL.z);
+  scene.add(grp);
+  addCollider(WINDMILL.x, WINDMILL.z, 1.5);
+}
+
+// low river mist, drifting downstream
+const mists = [];
+{
+  const mistTex = canvasTex(64, (ctx, s) => {
+    const g2 = ctx.createRadialGradient(s / 2, s / 2, 4, s / 2, s / 2, s / 2);
+    g2.addColorStop(0, 'rgba(190,200,215,0.35)');
+    g2.addColorStop(1, 'rgba(190,200,215,0)');
+    ctx.fillStyle = g2; ctx.fillRect(0, 0, s, s);
+  });
+  for (let i = 0; i < 4; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: mistTex, transparent: true, depthWrite: false, opacity: 0.16 }));
+    sp.userData.z = -60 + i * 38;
+    sp.scale.set(rand(9, 13), rand(2.6, 3.6), 1);
+    mists.push(sp);
+    scene.add(sp);
+  }
+}
+// dream Z's for a sleeping giant
+const zzz = [];
+{
+  const zTex = canvasTex(32, (ctx) => {
+    ctx.fillStyle = '#efe3c8';
+    ctx.font = 'bold italic 24px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('z', 16, 24);
+  });
+  for (let i = 0; i < 4; i++) {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: zTex, transparent: true, depthWrite: false, opacity: 0 }));
+    sp.userData.age = 9;
+    scene.add(sp);
+    zzz.push(sp);
+  }
 }
 
 // shared soft radial glow for pickups
@@ -2321,7 +2442,35 @@ const AudioEngine = {
     const lapLfoG = ctx.createGain(); lapLfoG.gain.value = 0.35;
     lapLfo.connect(lapLfoG); lapLfoG.connect(this.lapGain.gain); lapLfo.start();
     ln.connect(llp); llp.connect(this.lapGain); this.lapGain.connect(this.master);
+    // Winnie's snore: a slow warm swell, gain scaled by proximity to the den
+    const so = ctx.createOscillator(); so.type = 'sine'; so.frequency.value = 58;
+    const sLfo = ctx.createOscillator(); sLfo.frequency.value = 0.27;
+    const sDepth = ctx.createGain(); sDepth.gain.value = 0.5;
+    this.snoreGain = ctx.createGain(); this.snoreGain.gain.value = 0;
+    const sMix = ctx.createGain(); sMix.gain.value = 0.5;
+    sLfo.connect(sDepth); sDepth.connect(sMix.gain); sLfo.start();
+    so.connect(sMix); sMix.connect(this.snoreGain); this.snoreGain.connect(this.master);
+    so.start();
     this.scheduleCricket();
+  },
+  setSnore(v) {
+    if (this.snoreGain) this.snoreGain.gain.value = this.muted ? 0 : v * 0.09;
+  },
+  creak() {
+    if (!this.ctx || this.muted) return;
+    const ctx = this.ctx, t0 = ctx.currentTime;
+    for (const [f1, f2, d] of [[520, 330, 0], [340, 260, 0.4]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f1, t0 + d);
+      o.frequency.exponentialRampToValueAtTime(f2, t0 + d + 0.28);
+      const flt = ctx.createBiquadFilter(); flt.type = 'lowpass'; flt.frequency.value = 950;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t0 + d);
+      g.gain.linearRampToValueAtTime(0.028, t0 + d + 0.05);
+      g.gain.linearRampToValueAtTime(0, t0 + d + 0.32);
+      o.connect(flt); flt.connect(g); g.connect(this.master);
+      o.start(t0 + d); o.stop(t0 + d + 0.36);
+    }
   },
   noiseSrc() {
     const ctx = this.ctx, len = ctx.sampleRate * 2;
@@ -3042,6 +3191,10 @@ let fishBobber, fishLine;
 let mugCount = 0;
 let bmNext = 150, bmT = 0;              // blood moon omen timer
 let showerNext = rand(170, 290), showerT = 0; // meteor shower timer
+let creakT = rand(5, 10), glintT = rand(14, 30), zT = 1.5;
+let tongueT = rand(2, 4), blinkT = rand(2, 5), blinkHold = 0;
+let foxPounceT = rand(8, 15), ravenHopT = rand(7, 13), winTwitchT = rand(6, 12), winTwitch = 0;
+let possumFlop = 0, possumRecover = 0;
 const bmBase = new THREE.Color(0x5e1c07), bmDeep = new THREE.Color(0x78100a);
 let runStart = null, runBest = null;
 const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
@@ -3442,8 +3595,17 @@ function tick() {
       g.position.y += Math.sin(Math.PI * (1 - a.hopT / 0.55)) * 1.15;
     }
   }
-  // possum sway
-  possum.rotation.z = Math.sin(nowT * 1.3) * 0.04;
+  // possum: gentle sway — until you get close, at which point it is DECEASED
+  {
+    const dP = Math.hypot(player.pos.x - POSSUM.x, player.pos.z - POSSUM.z);
+    if (dP < 2.6) { possumFlop = 1; possumRecover = 2.5; }
+    else if (dP > 4.5) {
+      possumRecover -= dt;
+      if (possumRecover <= 0) possumFlop = 0; // ...and it's back. Miraculous.
+    }
+    const targetZ = possumFlop ? 1.42 : Math.sin(nowT * 1.3) * 0.04;
+    possum.rotation.z = lerp(possum.rotation.z, targetZ, 1 - Math.exp(-6 * dt));
+  }
   // raven occasional flap
   {
     const u = raven.userData;
@@ -3548,7 +3710,7 @@ function tick() {
     bigfootArm.rotation.z = lerp(bigfootArm.rotation.z, 0, 1 - Math.exp(-4 * dt));
   }
   const eyePulse = 0.8 + 0.4 * Math.sin(nowT * 3.2);
-  for (const e of chupaEyes) e.scale.setScalar(eyePulse);
+  for (const e of chupaEyes) e.scale.set(eyePulse, blinkHold > 0 ? 0.06 : eyePulse, eyePulse);
   if (watcherFade > 0) {
     watcherFade -= dt;
     watcherMat.opacity = Math.max(0, watcherFade / 1.4);
@@ -3711,6 +3873,8 @@ function tick() {
       crackleT = rand(0.07, 0.35);
       const prox = clamp(1 - Math.hypot(player.pos.x - FIRE.x, player.pos.z - FIRE.z) / 16, 0, 1);
       AudioEngine.crackle(prox);
+      if (prox > 0.45 && Math.random() < 0.3) // a spark pops with the sound
+        spawnDust(FIRE.x + rand(-0.3, 0.3), terrainH(FIRE.x, FIRE.z) + 1.0, FIRE.z + rand(-0.3, 0.3), 0xffc966);
     }
     owlT -= dt;
     if (owlT <= 0) {
@@ -3882,6 +4046,85 @@ function tick() {
       }
     }
   }
+
+  // ---- little lives: the canyon never fully sleeps
+  windmillRotor.rotation.z += dt * 0.75;                 // always turning
+  windmillHead.rotation.y = Math.sin(nowT * 0.09) * 0.25;
+  grottoPuffer.rotation.z = Math.sin(nowT * 0.9) * 0.08;
+  grottoPuffer.rotation.x = Math.cos(nowT * 0.7) * 0.05;
+  // snake tastes the air
+  tongueT -= dt;
+  if (tongueT <= 0) tongueT = rand(2, 4.5);
+  snakeTongue.scale.z = tongueT < 0.35 ? Math.sin(Math.PI * (1 - tongueT / 0.35)) : 0.01;
+  // chupacabra blinks (which is somehow worse)
+  blinkT -= dt;
+  if (blinkT <= 0) { blinkT = rand(2.5, 6); blinkHold = 0.13; }
+  blinkHold = Math.max(0, blinkHold - dt);
+  // fox hears something under the grass
+  foxPounceT -= dt;
+  if (foxPounceT <= 0) { foxPounceT = rand(9, 16); fox.pounce = 0.55; }
+  if (fox.pounce > 0) {
+    fox.pounce -= dt;
+    fox.extraY = Math.sin(Math.PI * (1 - fox.pounce / 0.55)) * 0.55;
+    if (fox.pounce <= 0) fox.extraY = 0;
+  }
+  // raven sidles along his branch
+  ravenHopT -= dt;
+  if (ravenHopT <= 0 && raven.userData.flapT <= 0) {
+    ravenHopT = rand(7, 14);
+    raven.userData.hop = { t: 0, from: raven.position.x, to: clamp(raven.position.x + rand(-0.35, 0.35), -3.75, -3.0) };
+  }
+  if (raven.userData.hop) {
+    const hp = raven.userData.hop;
+    hp.t += dt * 4;
+    raven.position.x = lerp(hp.from, hp.to, Math.min(hp.t, 1));
+    raven.position.y = 9.7 + Math.sin(Math.PI * Math.min(hp.t, 1)) * 0.18;
+    if (hp.t >= 1) raven.userData.hop = null;
+  }
+  // Winnie dreams: leg twitches and drifting Z's
+  winTwitchT -= dt;
+  if (winTwitchT <= 0) { winTwitchT = rand(6, 13); winTwitch = 0.5; }
+  winTwitch = Math.max(0, winTwitch - dt);
+  if (winTwitch > 0 && winnieWag <= 0) winnie.rotation.y += Math.sin(nowT * 40) * 0.006;
+  zT -= dt;
+  if (zT <= 0) {
+    zT = 2.4;
+    if (started && winnieWag <= 0 && Math.hypot(player.pos.x - DEN.x, player.pos.z - DEN.z) < 13) {
+      const zs = zzz.find(q => q.userData.age > 2.2) || zzz[0];
+      zs.userData.age = 0;
+      zs.position.set(DEN.x + 1, terrainH(DEN.x, DEN.z) + 1.6, DEN.z);
+    }
+  }
+  for (const zs of zzz) {
+    if (zs.userData.age > 2.2) { zs.material.opacity = 0; continue; }
+    zs.userData.age += dt;
+    const a = zs.userData.age;
+    zs.position.y += 0.45 * dt;
+    zs.position.x += Math.sin(nowT * 2 + a * 4) * 0.1 * dt;
+    zs.scale.setScalar(0.35 + a * 0.22);
+    zs.material.opacity = 0.75 * Math.max(0, 1 - a / 2.2);
+  }
+  // river mist rolls downstream
+  for (const m of mists) {
+    m.userData.z += dt * 0.55;
+    if (m.userData.z > 95) m.userData.z = -75;
+    m.position.set(riverX(m.userData.z), WATER_Y + 0.9, m.userData.z);
+    m.material.opacity = 0.1 + 0.06 * Math.sin(nowT * 0.5 + m.userData.z);
+  }
+  // every so often, the Great Tiki's eyes catch the moonlight. Probably the moonlight.
+  glintT -= dt;
+  if (glintT <= 0) {
+    glintT = rand(20, 45);
+    if (tikiGlow <= 0) tikiGlow = 0.35;
+  }
+  // the windmill complains about the wind, quietly
+  creakT -= dt;
+  if (creakT <= 0) {
+    creakT = rand(6, 12);
+    if (started && Math.hypot(player.pos.x - WINDMILL.x, player.pos.z - WINDMILL.z) < 16)
+      AudioEngine.creak();
+  }
+  if (started) AudioEngine.setSnore(clamp(1 - Math.hypot(player.pos.x - DEN.x, player.pos.z - DEN.z) / 11, 0, 1));
 
   // ---- meteor showers, twinkles, hearts, cooldowns
   hornCooldown = Math.max(0, hornCooldown - dt);
