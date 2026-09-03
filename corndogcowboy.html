@@ -108,6 +108,7 @@ for(let i=0;i<55;i++) S.stars.push({x:Math.random()*GW*.78,y:8+Math.random()*(GH
 
 // ── COWBOY GEOMETRY ──
 // Sprite: P=4, 10 cols × 20 rows = 40×80px, top-left at (CBOY_SX, cowY-38)
+// Mouth is open by default; S.mouth is a chomp timer that closes it briefly on a catch
 // Mouth at row 13, cols 3-5 → y = cowY+14, x = CBOY_SX+12
 const P=4;
 const CBOY_SX=GW-70;
@@ -126,11 +127,11 @@ const POOL=[];
 ].forEach(t=>{for(let i=0;i<t.n;i++)POOL.push(t);});
 const MEGA={id:'mega',pts:50,label:'MEGA DOG!!',col:'#ff8800'};
 
-function spawn(){
+function spawn(gap=0){
   const def=Math.random()<.04?MEGA:POOL[Math.random()*POOL.length|0];
   const big=def===MEGA;
   const yMin=COW_MIN+MOUTH_DY-14, yMax=COW_MAX+MOUTH_DY+14;
-  S.treats.push({...def,x:-50,y:yMin+Math.random()*(yMax-yMin),
+  S.treats.push({...def,x:-50-gap,y:yMin+Math.random()*(yMax-yMin),
     spd:S.speed+(Math.random()-.5)*.5,wob:Math.random()*Math.PI*2,
     angle:0,checked:false,big});
 }
@@ -197,7 +198,7 @@ function drawCowboy(sx,sy,mo){
   box(2,7,14,15,'#6a3a10');
 
   // Mouth
-  if(mo>0){
+  if(!mo){
     box(3,5,13,14,'#cc2200');
     row(3,5,14,'#990000');
     b(3,13,'#ffe8c8');b(5,13,'#ffe8c8');
@@ -282,12 +283,12 @@ function update(){
   S.cowY+=(S.tgtY-S.cowY)*.13;
   S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
   if(S.mouth>0)S.mouth--;
-  S.speed=1.8+S.score*.012;
-  S.spawnI=Math.max(30,80-S.score*.25);
+  S.speed=Math.min(5.5,1.8+S.score*.006);
+  S.spawnI=Math.max(38,80-S.score*.15);
 
   if(++S.spawnT>=S.spawnI){
     S.spawnT=0; spawn();
-    if(S.score>60&&Math.random()<.28)spawn();
+    if(S.score>60&&Math.random()<.28)spawn(120);
   }
 
   const mouthY=S.cowY+MOUTH_DY;
@@ -299,9 +300,9 @@ function update(){
 
     if(!t.checked&&t.x>=MOUTH_X-6){
       t.checked=true;
-      if(Math.abs(t.y-mouthY)<(S.mouth>0?26:20)){
+      if(Math.abs(t.y-mouthY)<24){
         S.score+=t.pts; S.streak++; S.best=Math.max(S.best,S.streak);
-        S.mouth=22; SFX.catch(); burst(t.x,t.y,t.col,t.big?16:9);
+        S.mouth=10; SFX.catch(); burst(t.x,t.y,t.col,t.big?16:9);
         if(t.big){SFX.mega();toast('★ MEGA DOG! ★','#ffd700',true);}
         else if(S.streak===5) {toast('HOT STREAK! +50','#ff8800',true);S.score+=50;SFX.streak();}
         else if(S.streak===10){toast('ON FIRE! +100','#ff4400',true);S.score+=100;SFX.streak();}
