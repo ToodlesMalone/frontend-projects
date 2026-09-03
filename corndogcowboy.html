@@ -24,12 +24,13 @@ html,body{width:100%;height:100%;background:#08000f;overflow:hidden;display:flex
   text-shadow:0 0 8px #ff8800,0 0 24px #ff4400,3px 3px 0 #5a1e00;
 }
 #iphoto{
+  position:relative;
   width:min(42vw,220px);aspect-ratio:3/4;border-radius:6px;overflow:hidden;
   border:4px solid #c8860a;
   box-shadow:0 0 0 4px #5a3010,0 0 28px rgba(200,134,10,.55);
   transition:transform .55s ease-in,opacity .55s ease-in;
 }
-#iphoto.go{transform:translate(44vw,28vh) scale(.08);opacity:0}
+#pix{position:absolute;inset:0;width:100%;height:100%;display:none;image-rendering:pixelated;image-rendering:crisp-edges}
 #iphoto img{width:100%;height:100%;object-fit:cover;object-position:center top}
 #istart{
   font-family:'Press Start 2P',monospace;
@@ -49,7 +50,7 @@ html,body{width:100%;height:100%;background:#08000f;overflow:hidden;display:flex
 
 <div id="intro">
   <div class="ititle">CORNDOG<br>COWBOY</div>
-  <div id="iphoto"><img src="images/corndogcowboy.jpg" alt="Corndog Cowboy"></div>
+  <div id="iphoto"><img id="iimg" src="images/corndogcowboy.jpg" alt="Corndog Cowboy"><canvas id="pix"></canvas></div>
   <div id="istart">&#9654; TAP OR SCROLL TO PLAY</div>
 </div>
 
@@ -110,19 +111,21 @@ const S={
 };
 
 // ── COWBOY GEOMETRY ──
-// Sprite: P=4, 10 cols × 20 rows = 40×80px, top-left at (CBOY_SX, cowY-38)
+// Sprite: P=4, 12 cols × 24 rows = 48×96px, top-left at (CBOY_SX, cowY-38)
 // Mouth is open by default; S.mouth is a chomp timer that closes it briefly on a catch
-// Mouth at row 13, cols 3-5 → y = cowY+14, x = CBOY_SX+12
+// Mouth at rows 15-16, cols 4-6 → y = cowY+24, x = CBOY_SX+16
 const P=4;
-const MOUTH_DY=14, COW_MIN=40;
+const MOUTH_DY=24, COW_MIN=40;
 let CBOY_SX, MOUTH_X, COW_MAX;
+// The corn dog stand, laid out as fractions of the logical height
+function stand(){
+  const signH=Math.round(GH*.17);
+  return {signH, bulbY:signH+7, winTop:signH+14, counterY:Math.round(GH*.62), groundY:Math.round(GH*.86)};
+}
 function layout(){
-  CBOY_SX=GW-70; MOUTH_X=CBOY_SX+3*P; COW_MAX=GH-90;
+  CBOY_SX=GW-80; MOUTH_X=CBOY_SX+4*P; COW_MAX=stand().groundY-48;
   S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
   S.tgtY=Math.max(COW_MIN,Math.min(COW_MAX,S.tgtY));
-  S.stars=[];
-  const n=Math.round(GW*GH/2400);
-  for(let i=0;i<n;i++)S.stars.push({x:Math.random()*(GW-90),y:8+Math.random()*(GH-60),r:.5+Math.random()*1.2,t:Math.random()*100});
 }
 ready=true; layout();
 
@@ -158,75 +161,119 @@ function toast(txt,col='#fff',big=false){
 
 const R=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x|0,y|0,w,h);};
 
-// ── BACKGROUND: night sky, stars, distant midway lights, dirt ──
+// ── BACKGROUND: the corn dog stand from the photo ──
 function drawBG(){
-  const g=ctx.createLinearGradient(0,0,0,GH-40);
-  g.addColorStop(0,'#090012');g.addColorStop(.7,'#120828');g.addColorStop(1,'#251008');
-  ctx.fillStyle=g;ctx.fillRect(0,0,GW,GH-40);
-  S.stars.forEach(s=>{
-    ctx.globalAlpha=.5+Math.sin(S.frame*.04+s.t)*.3;
-    ctx.fillStyle='#ffeebb';ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);ctx.fill();
-  });
-  ctx.globalAlpha=1;
-  const lc=['#ff4444','#44ff88','#4488ff','#ffff44','#ff44ff','#44ffff'];
-  for(let i=0;i<14;i++){
-    const lx=15+(i*31)%(GW-80),ly=GH-50-Math.sin(S.frame*.025+i*1.1)*1.5;
-    ctx.fillStyle=lc[i%6];ctx.globalAlpha=.65;
-    ctx.beginPath();ctx.arc(lx,ly,1.8,0,Math.PI*2);ctx.fill();
+  const L=stand();
+
+  // Sign: green frame, yellow pinstripe, pink field, "CORN DOGS" in white with blue outline
+  R(0,0,GW,L.signH,'#2e7a3c');
+  R(0,3,GW,L.signH-6,'#e8c23a');
+  R(0,5,GW,L.signH-10,'#f2a9da');
+  const fs=Math.min(L.signH*.5,GW/9.5)|0;
+  ctx.font=fs+'px "Press Start 2P",monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.lineJoin='round';ctx.lineWidth=Math.max(2,fs/5);ctx.strokeStyle='#3b7fd9';
+  ctx.strokeText('CORN DOGS',GW/2,L.signH/2+1);
+  ctx.fillStyle='#fbf4ff';ctx.fillText('CORN DOGS',GW/2,L.signH/2+1);
+  ctx.textBaseline='alphabetic';
+  // Two red lamps top-left, like the photo
+  [[7,4],[7,10]].forEach(([x,y],i)=>{ctx.fillStyle=(S.frame>>4)%2===i?'#ff2a2a':'#8a1010';ctx.beginPath();ctx.arc(x,y+1,2.2,0,Math.PI*2);ctx.fill();});
+
+  // Marquee bulbs, chasing
+  for(let i=0,x=8;x<GW;i++,x+=20){
+    const lit=((i+(S.frame>>3))&3)!==0;
+    if(lit){ctx.globalAlpha=.35;ctx.fillStyle='#bfe6ff';ctx.beginPath();ctx.arc(x,L.bulbY,6,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+    R(x-1,L.bulbY-5,2,2,'#556');
+    ctx.fillStyle=lit?'#f4fbff':'#8fa6bd';ctx.beginPath();ctx.arc(x,L.bulbY,2.6,0,Math.PI*2);ctx.fill();
   }
+
+  // Serving window: blue interior with stainless equipment
+  const wh=L.counterY-L.winTop;
+  R(0,L.winTop,GW,wh,'#1d5fc4');
+  R(0,L.winTop,GW,wh*.35|0,'#2c86dd');
+  R(0,L.winTop,3,wh,'#c9d1d9');R(GW-3,L.winTop,3,wh,'#c9d1d9');       // frame posts
+  const eq=[[.16,.45,.34,'#b4bcc4'],[.62,.55,.2,'#9aa3ac'],[.4,.7,.1,'#e8ecef'],[.52,.7,.1,'#e8ecef']];
+  eq.forEach(([fx,fy,fw,c])=>{const x=GW*fx|0,w=GW*fw|0,h=Math.min(wh*(1-fy),90)|0,y=L.counterY-h;R(x,y,w,h,c);R(x,y,w,3,'#e6eaee');R(x,y+3,w,2,'#6f7880');});
+  for(let y=L.counterY-Math.min(wh*.4,80)|0;y<L.counterY-4;y+=5)R(GW*.63|0,y,GW*.18|0,1,'#6f7880'); // machine vents
+  R(GW*.66|0,L.winTop+6,3,wh*.5|0,'#e3e8ec');                                        // chrome pole
+  ctx.globalAlpha=.12;ctx.fillStyle='#fff';                                          // glass sheen
+  for(let x=-wh;x<GW;x+=46){ctx.beginPath();ctx.moveTo(x,L.counterY);ctx.lineTo(x+wh,L.winTop);ctx.lineTo(x+wh+10,L.winTop);ctx.lineTo(x+10,L.counterY);ctx.fill();}
   ctx.globalAlpha=1;
-  R(0,GH-42,GW,3,'#7a4214');R(0,GH-39,GW,6,'#4a2808');R(0,GH-33,GW,33,'#3a1e04');
+
+  // Counter ledge
+  R(0,L.counterY,GW,6,'#cdd5dd');R(0,L.counterY+6,GW,2,'#7e8791');
+
+  // Front panel: cream bamboo with the small sign, hibiscus, and blue waves
+  const pt=L.counterY+8, ph=L.groundY-pt;
+  R(0,pt,GW,ph,'#efe5c8');
+  for(let x=14;x<GW;x+=38){R(x,pt,3,ph,'#d8c89e');R(x-1,pt+(ph*.4|0),5,2,'#c4b48a');R(x-1,pt+(ph*.8|0),5,2,'#c4b48a');}
+  ctx.font=Math.max(6,ph*.13|0)+'px "Press Start 2P",monospace';ctx.textAlign='left';
+  ctx.fillStyle='#e8749f';ctx.fillText('HAND DIPPED',GW*.16|0,pt+ph*.3|0);
+  ctx.lineWidth=2;ctx.strokeStyle='#3b7fd9';ctx.strokeText('CORN DOGS',GW*.16|0,pt+ph*.55|0);
+  ctx.fillStyle='#fbf4ff';ctx.fillText('CORN DOGS',GW*.16|0,pt+ph*.55|0);
+  [[GW*.09,pt+ph*.28],[GW*.5,pt+ph*.72],[GW*.7,pt+ph*.35]].forEach(([x,y])=>{
+    for(let k=0;k<5;k++){const a=k*Math.PI*2/5;ctx.fillStyle='#f28ac4';ctx.beginPath();ctx.arc(x+Math.cos(a)*4,y+Math.sin(a)*4,3.2,0,Math.PI*2);ctx.fill();}
+    ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.arc(x,y,1.8,0,Math.PI*2);ctx.fill();
+  });
+  const wy=L.groundY-Math.max(8,ph*.22|0);
+  [['#8fc6ff',0],['#3b7fd9',4]].forEach(([c,off])=>{
+    ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(0,L.groundY);
+    for(let x=0;x<=GW;x+=4)ctx.lineTo(x,wy+off+Math.sin((x+S.frame*.6)/9)*2.5);
+    ctx.lineTo(GW,L.groundY);ctx.fill();
+  });
+
+  // Asphalt
+  R(0,L.groundY,GW,GH-L.groundY,'#4b4a52');
+  for(let x=6;x<GW;x+=29)R(x,L.groundY+((x*7)%(GH-L.groundY-4))+2,9,2,'#5a5962');
 }
 
-// ── PIXEL COWBOY (faces left toward incoming treats) ──
+// ── PIXEL COWBOY: straw hat, braided band, big beard — faces left toward the treats ──
 function drawCowboy(sx,sy,mo){
   const b=(gx,gy,c)=>R(sx+gx*P,sy+gy*P,P,P,c);
   const row=(x1,x2,gy,c)=>{for(let x=x1;x<=x2;x++)b(x,gy,c);};
   const box=(x1,x2,y1,y2,c)=>{for(let x=x1;x<=x2;x++)for(let y=y1;y<=y2;y++)b(x,y,c);};
+  const STRAW='#f3ecd8',STRAW2='#e2d7b8',STRAW3='#c9bb95',SKIN='#f2cba6',SKIN2='#dfb18c',
+        BEARD='#7c4a26',BEARD2='#5a3416',GRAY='#b9ad9d',SHIRT='#8fa0b4',SHIRT2='#76889d';
 
-  // Straw hat
-  box(1,8,0,4,'#d8c8a0'); box(2,7,0,4,'#ece0b8');
-  row(0,9,5,'#c0b088'); row(0,9,6,'#d8c8a0');
-  row(1,8,4,'#8b5a2b');            // braided band
-  row(2,4,1,'#f6eed0');            // highlight
+  // Shirt and arms (drawn first so the beard hangs over the collar)
+  box(1,10,20,23,SHIRT); row(1,10,20,SHIRT2);
+  b(0,21,SHIRT);b(0,22,SHIRT);b(0,23,SKIN); b(11,21,SHIRT);b(11,22,SHIRT);b(11,23,SKIN);
+  b(5,22,SHIRT2);b(6,22,SHIRT2);
+  box(4,7,18,19,SKIN);                                   // neck
 
   // Face
-  box(1,8,7,14,'#f4c28c');
-  for(let y=7;y<=14;y++){b(1,y,'#e4a87a');b(8,y,'#e4a87a');}
-  b(9,9,'#f4c28c');b(9,10,'#f4c28c');b(9,11,'#d4906a');   // ear
+  box(2,9,10,17,SKIN);
+  for(let y=10;y<=17;y++){b(2,y,SKIN2);b(9,y,SKIN2);}
+  b(10,12,SKIN);b(10,13,SKIN2);                          // ear
+  row(3,5,10,BEARD2); row(7,8,10,BEARD2);                // brows
+  b(3,11,'#2a1a0a');b(4,11,'#2a1a0a');b(3,12,'#7a5a33'); // near eye (hazel)
+  R(sx+3*P,sy+11*P,2,2,'#fff');
+  b(7,11,'#3a2a1a');                                     // far eye
+  b(2,13,SKIN2);b(2,14,'#d19c78');                       // nose
 
-  // Eye + brow
-  b(2,9,'#1a0800');b(3,9,'#1a0800');b(2,10,'#1a0800');
-  R(sx+2*P,sy+9*P,2,2,'#fff');
-  row(2,4,8,'#5a2a00');
+  // Beard, full and reddish with gray flecks
+  box(2,9,15,19,BEARD); row(3,8,20,BEARD); row(4,7,21,BEARD);
+  [[3,16],[8,15],[5,18],[7,19],[4,20],[6,21],[2,17],[9,18],[8,17]].forEach(([x,y])=>b(x,y,GRAY));
+  row(3,7,14,BEARD2); b(2,15,BEARD2); b(8,15,BEARD2);   // mustache
 
-  // Nose
-  b(1,11,'#d4906a');b(1,12,'#c4805a');
-
-  // Beard + mustache
-  row(2,6,12,'#5a2a00');b(2,13,'#5a2a00');b(6,13,'#5a2a00');
-  box(2,7,14,15,'#6a3a10');
-
-  // Mouth
+  // Mouth (open by default; a catch chomps it shut for a few frames)
   if(!mo){
-    box(3,5,13,14,'#cc2200');
-    row(3,5,14,'#990000');
-    b(3,13,'#ffe8c8');b(5,13,'#ffe8c8');
-    b(4,14,'#dd4444');
-  } else {
-    row(3,5,13,'#b07060');
-  }
+    box(4,6,15,16,'#c0392b'); row(4,6,16,'#7b1f1a');
+    b(4,15,'#fff2dc');b(6,15,'#fff2dc'); b(5,16,'#d9534f');
+  } else row(4,6,15,BEARD2);
 
-  // Shirt
-  box(1,8,16,19,'#6a7a90');
-  row(1,8,16,'#5a6a80');
-  b(4,17,'#3a4a60');b(4,18,'#3a4a60');
-  b(0,17,'#6a7a90');b(0,18,'#f4c28c');
-  b(9,17,'#6a7a90');b(9,18,'#f4c28c');
+  // Straw hat: pinched crown, vent pattern, gold pin, braided band, wide brim
+  box(2,9,1,6,STRAW); row(3,8,0,STRAW);
+  for(let y=1;y<=6;y++){b(2,y,STRAW2);b(9,y,STRAW2);}
+  [[3,2],[5,2],[7,2],[4,4],[6,4],[8,4]].forEach(([x,y])=>b(x,y,STRAW3));
+  b(5,3,'#d4a017');b(6,3,'#b8860b');
+  for(let x=2;x<=9;x++)b(x,7,x%2?'#8b5a2b':'#f8f0dc');
+  b(0,7,STRAW);b(11,7,STRAW);
+  row(0,11,8,STRAW); row(0,11,9,STRAW2);
+  b(1,10,STRAW3);b(10,10,STRAW3);
 
   if(S.streak>=5){
     ctx.save();ctx.globalAlpha=.18+Math.sin(S.frame*.2)*.08;
-    ctx.fillStyle='#ff8800';ctx.fillRect(sx,sy,10*P,20*P);ctx.restore();
+    ctx.fillStyle='#ff8800';ctx.fillRect(sx,sy,12*P,24*P);ctx.restore();
   }
 }
 
@@ -339,7 +386,7 @@ function draw(){
 
   if(S.streak>=3){
     const my=S.cowY+MOUTH_DY;
-    ctx.globalAlpha=.06+Math.sin(S.frame*.15)*.03;
+    ctx.globalAlpha=.1+Math.sin(S.frame*.15)*.04;
     ctx.fillStyle='#ff8800';ctx.fillRect(MOUTH_X-10,my-24,28,48);
     ctx.globalAlpha=1;
   }
@@ -353,15 +400,17 @@ function draw(){
   });
   ctx.globalAlpha=1;
 
-  // HUD
+  // HUD: dark strip across the top of the serving window
+  const hy=stand().winTop;
+  R(0,hy,GW,26,'rgba(0,0,0,.5)');
   ctx.font='8px "Press Start 2P",monospace';
-  ctx.fillStyle='#ffe066';ctx.textAlign='left';ctx.fillText('SCORE',8,14);
-  ctx.fillStyle='#fff';ctx.fillText(S.score,8,24);
-  ctx.fillStyle=S.streak>=5?'#ff8800':'#888';ctx.textAlign='right';ctx.fillText('STREAK',GW-8,14);
-  ctx.fillStyle=S.streak>=5?'#ffcc00':'#fff';ctx.fillText('x'+S.streak,GW-8,24);
+  ctx.fillStyle='#ffe066';ctx.textAlign='left';ctx.fillText('SCORE',8,hy+11);
+  ctx.fillStyle='#fff';ctx.fillText(S.score,8,hy+22);
+  ctx.fillStyle=S.streak>=5?'#ff8800':'#aab';ctx.textAlign='right';ctx.fillText('STREAK',GW-8,hy+11);
+  ctx.fillStyle=S.streak>=5?'#ffcc00':'#fff';ctx.fillText('x'+S.streak,GW-8,hy+22);
   ctx.textAlign='center';ctx.fillStyle='#ff4444';
-  for(let i=0;i<S.lives;i++)ctx.fillText('♥',GW/2-(S.lives-1)*10+i*20,14);
-  if(S.streak>=5){ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#ff8800';ctx.textAlign='left';ctx.fillText('ON FIRE!',8,36);}
+  for(let i=0;i<S.lives;i++)ctx.fillText('♥',GW/2-(S.lives-1)*10+i*20,hy+11);
+  if(S.streak>=5){ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#ff8800';ctx.textAlign='center';ctx.fillText('ON FIRE!',GW/2,hy+22);}
 
   S.toasts.forEach(t=>{
     ctx.globalAlpha=Math.min(1,t.life/20);
@@ -372,7 +421,7 @@ function draw(){
 
   if(S.frame<180){
     ctx.globalAlpha=Math.max(0,1-S.frame/150);
-    ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#aaa';ctx.textAlign='center';
+    ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#fff';ctx.textAlign='center';
     ctx.fillText('SCROLL / SWIPE UP & DOWN TO CATCH',GW/2,GH-8);
     ctx.globalAlpha=1;
   }
@@ -431,19 +480,39 @@ function startGame(){
 }
 function restart(){startGame();}
 
-// ── INTRO: photo flies into the game (auto after 3s, or on tap/scroll) ──
+// ── INTRO: photo pixelates in place, then fades into the game (auto after 3s, or on tap/scroll) ──
 const introEl=document.getElementById('intro');
 const photoEl=document.getElementById('iphoto');
+const imgEl=document.getElementById('iimg');
+const pix=document.getElementById('pix');
 let launched=false;
+
+function pixelate(step){
+  // Redraw the cover-cropped photo through a tiny canvas so each source pixel becomes a chunky block
+  const r=photoEl.getBoundingClientRect(), d=devicePixelRatio||1;
+  if(pix.width!==r.width*d|0){pix.width=r.width*d|0;pix.height=r.height*d|0;}
+  const iw=imgEl.naturalWidth, ih=imgEl.naturalHeight;
+  const sc=Math.max(r.width/iw,r.height/ih), sw=r.width/sc, sh=r.height/sc, sx=(iw-sw)/2;
+  const cw=Math.max(1,Math.ceil(r.width/step)), ch=Math.max(1,Math.ceil(r.height/step));
+  const tiny=document.createElement('canvas'); tiny.width=cw; tiny.height=ch;
+  tiny.getContext('2d').drawImage(imgEl,sx,0,sw,sh,0,0,cw,ch);
+  const pc=pix.getContext('2d'); pc.imageSmoothingEnabled=false;
+  pc.drawImage(tiny,0,0,cw,ch,0,0,pix.width,pix.height);
+}
 
 function launch(){
   if(launched)return; launched=true;
-  photoEl.classList.add('go');
-  setTimeout(()=>{
+  const steps=[2,3,4,6,8,12,16,24,32,48];
+  const canPix=imgEl.complete&&imgEl.naturalWidth>0;
+  if(canPix){pix.style.display='block';imgEl.style.visibility='hidden';}
+  let i=0;
+  const tick=()=>{
+    if(canPix&&i<steps.length){pixelate(steps[i++]);setTimeout(tick,85);return;}
     introEl.classList.add('out');
     startGame();
     setTimeout(()=>introEl.style.display='none',700);
-  },400);
+  };
+  tick();
 }
 introEl.addEventListener('click',()=>{initAC();launch();});
 introEl.addEventListener('touchend',e=>{e.preventDefault();initAC();launch();},{passive:false});
