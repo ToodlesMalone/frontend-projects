@@ -111,11 +111,11 @@ const S={
 };
 
 // ── COWBOY GEOMETRY ──
-// Sprite: P=4, 12 cols × 24 rows = 48×96px, top-left at (CBOY_SX, cowY-38)
+// Sprite: P=3, 22 cols × 36 rows = 66×108px, top-left at (CBOY_SX, cowY-45)
 // Mouth is open by default; S.mouth is a chomp timer that closes it briefly on a catch
-// Mouth at rows 15-16, cols 4-6 → y = cowY+24, x = CBOY_SX+16
-const P=4;
-const MOUTH_DY=24, COW_MIN=40;
+// Mouth at rows 21-23, cols 8-13 → y = cowY+22, x = CBOY_SX+24
+const P=3;
+const MOUTH_DY=22, COW_MIN=45;
 let CBOY_SX, MOUTH_X, COW_MAX;
 // The corn dog stand, laid out as fractions of the logical height
 function stand(){
@@ -123,7 +123,7 @@ function stand(){
   return {signH, bulbY:signH+7, winTop:signH+14, counterY:Math.round(GH*.62), groundY:Math.round(GH*.86)};
 }
 function layout(){
-  CBOY_SX=GW-80; MOUTH_X=CBOY_SX+4*P; COW_MAX=stand().groundY-48;
+  CBOY_SX=GW-80; MOUTH_X=CBOY_SX+8*P; COW_MAX=stand().groundY-53;
   S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
   S.tgtY=Math.max(COW_MIN,Math.min(COW_MAX,S.tgtY));
 }
@@ -226,54 +226,69 @@ function drawBG(){
   for(let x=6;x<GW;x+=29)R(x,L.groundY+((x*7)%(GH-L.groundY-4))+2,9,2,'#5a5962');
 }
 
-// ── PIXEL COWBOY: straw hat, braided band, big beard — faces left toward the treats ──
+// ── PIXEL COWBOY: drawn from a pixel map so it can carry the photo's features ──
+// Straw hat with cattleman crease, lattice vents and gold pin, braided band, wide curled brim,
+// hazel eyes, auburn mustache and a big beard that goes gray toward the chin.
+const COW_PAL={
+  W:'#f4eedc',w:'#e0d6b8',d:'#c6b78d',G:'#d4a017',b:'#8a5a2b',c:'#f7efdb',
+  S:'#f3cdb0',s:'#dcab8c',e:'#fbf7ee',H:'#9a8f4a',E:'#2b1b0e',K:'#5b3a1e',
+  B:'#7e4b28',R:'#9d5f33',Y:'#b8aa9b',y:'#d9d2c8',
+  M:'#c0392b',m:'#6e1b16',T:'#fff3e0',t:'#d9534f',
+};
+const COW_MAP=[
+  ".....WWW......WWW.....",
+  "....WWWWWw..wWWWWW....",
+  "....WWWWWWwwWWWWWW....",
+  "....WWWWWWWWWWWWWW....",
+  "....dWdWdWdWdWdWdW....",
+  "....WdWdWGGWdWdWdW....",
+  "....dWdWdWdWdWdWdW....",
+  "....WWWWWWWWWWWWWw....",
+  "WW..bcbcbcbcbcbcbc..WW",
+  "WWWWWWWWWWWWWWWWWWWWWW",
+  "wwwwwwwwwwwwwwwwwwwwww",
+  "....ssSSSSSSSSSSss....",
+  "....sSSSSSSSSSSSSs....",
+  "....sSKKKKSSKKKKSs....",
+  "...SseEHeSSSSeEHesS...",
+  "...SseEHeSSSSeEHesS...",
+  "...ssSSSSSssSSSSSss...",
+  "....BBSSSSssSSSSBB....",
+  "....BBSSSSsssSSSBB....",
+  "....BBSBBBBBBBBSBB....",
+  "....BBBBBBBBBBBBBB....",
+  "...BBBBBMMMMMMBBBBB...",
+  "...BBBBBTmmmmTBBBBB...",
+  "...BBBBBmttttmBBBBB...",
+  "..BBBBBBBBBBBBBBBBBB..",
+  "..BBRBBBBYBBBBRBBBBB..",
+  "..BBBBYBBBBBBYBBBBBB..",
+  "..BYBBBBBYBBBBBBBYBB..",
+  "...BBYBBYBBBYBBYBBB...",
+  "...YBBYBYBBYBYBBYBY...",
+  "....YYBYYBYYBYYBYY....",
+  ".....YYYyYYYYyYYY.....",
+  "......yYYyyYYyYy......",
+  ".......yyYyyYyy.......",
+  "......................",
+  "......................",
+];
 function drawCowboy(sx,sy,mo){
-  const b=(gx,gy,c)=>R(sx+gx*P,sy+gy*P,P,P,c);
-  const row=(x1,x2,gy,c)=>{for(let x=x1;x<=x2;x++)b(x,gy,c);};
-  const box=(x1,x2,y1,y2,c)=>{for(let x=x1;x<=x2;x++)for(let y=y1;y<=y2;y++)b(x,y,c);};
-  const STRAW='#f3ecd8',STRAW2='#e2d7b8',STRAW3='#c9bb95',SKIN='#f2cba6',SKIN2='#dfb18c',
-        BEARD='#7c4a26',BEARD2='#5a3416',GRAY='#b9ad9d',SHIRT='#8fa0b4',SHIRT2='#76889d';
-
-  // Shirt and arms (drawn first so the beard hangs over the collar)
-  box(1,10,20,23,SHIRT); row(1,10,20,SHIRT2);
-  b(0,21,SHIRT);b(0,22,SHIRT);b(0,23,SKIN); b(11,21,SHIRT);b(11,22,SHIRT);b(11,23,SKIN);
-  b(5,22,SHIRT2);b(6,22,SHIRT2);
-  box(4,7,18,19,SKIN);                                   // neck
-
-  // Face
-  box(2,9,10,17,SKIN);
-  for(let y=10;y<=17;y++){b(2,y,SKIN2);b(9,y,SKIN2);}
-  b(10,12,SKIN);b(10,13,SKIN2);                          // ear
-  row(3,5,10,BEARD2); row(7,8,10,BEARD2);                // brows
-  b(3,11,'#2a1a0a');b(4,11,'#2a1a0a');b(3,12,'#7a5a33'); // near eye (hazel)
-  R(sx+3*P,sy+11*P,2,2,'#fff');
-  b(7,11,'#3a2a1a');                                     // far eye
-  b(2,13,SKIN2);b(2,14,'#d19c78');                       // nose
-
-  // Beard, full and reddish with gray flecks
-  box(2,9,15,19,BEARD); row(3,8,20,BEARD); row(4,7,21,BEARD);
-  [[3,16],[8,15],[5,18],[7,19],[4,20],[6,21],[2,17],[9,18],[8,17]].forEach(([x,y])=>b(x,y,GRAY));
-  row(3,7,14,BEARD2); b(2,15,BEARD2); b(8,15,BEARD2);   // mustache
-
-  // Mouth (open by default; a catch chomps it shut for a few frames)
-  if(!mo){
-    box(4,6,15,16,'#c0392b'); row(4,6,16,'#7b1f1a');
-    b(4,15,'#fff2dc');b(6,15,'#fff2dc'); b(5,16,'#d9534f');
-  } else row(4,6,15,BEARD2);
-
-  // Straw hat: pinched crown, vent pattern, gold pin, braided band, wide brim
-  box(2,9,1,6,STRAW); row(3,8,0,STRAW);
-  for(let y=1;y<=6;y++){b(2,y,STRAW2);b(9,y,STRAW2);}
-  [[3,2],[5,2],[7,2],[4,4],[6,4],[8,4]].forEach(([x,y])=>b(x,y,STRAW3));
-  b(5,3,'#d4a017');b(6,3,'#b8860b');
-  for(let x=2;x<=9;x++)b(x,7,x%2?'#8b5a2b':'#f8f0dc');
-  b(0,7,STRAW);b(11,7,STRAW);
-  row(0,11,8,STRAW); row(0,11,9,STRAW2);
-  b(1,10,STRAW3);b(10,10,STRAW3);
-
+  // Gray-blue heather shirt behind the beard
+  R(sx,sy+30*P,22*P,6*P,'#97a7ba'); R(sx,sy+30*P,22*P,P,'#7d8ea3');
+  R(sx,sy+32*P,P,4*P,'#7d8ea3'); R(sx+21*P,sy+32*P,P,4*P,'#7d8ea3');
+  for(let gy=0;gy<COW_MAP.length;gy++){
+    const line=COW_MAP[gy];
+    for(let gx=0;gx<line.length;gx++){
+      let ch=line[gx]; if(ch==='.')continue;
+      if(mo&&gy>=21&&gy<=23&&gx>=8&&gx<=13)ch=gy===22?'K':'B';   // chomp: mouth closes into the beard
+      R(sx+gx*P,sy+gy*P,P,P,COW_PAL[ch]);
+    }
+  }
+  R(sx+6*P,sy+14*P,1,1,'#fff');R(sx+14*P,sy+14*P,1,1,'#fff');  // eye glints
   if(S.streak>=5){
     ctx.save();ctx.globalAlpha=.18+Math.sin(S.frame*.2)*.08;
-    ctx.fillStyle='#ff8800';ctx.fillRect(sx,sy,12*P,24*P);ctx.restore();
+    ctx.fillStyle='#ff8800';ctx.fillRect(sx,sy,22*P,36*P);ctx.restore();
   }
 }
 
@@ -392,7 +407,7 @@ function draw(){
   }
 
   S.treats.forEach(drawTreat);
-  drawCowboy(CBOY_SX,S.cowY-38,S.mouth);
+  drawCowboy(CBOY_SX,S.cowY-45,S.mouth);
 
   S.sparks.forEach(p=>{
     ctx.globalAlpha=p.life/p.max;
