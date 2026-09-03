@@ -59,16 +59,20 @@ html,body{width:100%;height:100%;background:#08000f;overflow:hidden;display:flex
 <script>
 'use strict';
 const cv=document.getElementById('c'),ctx=cv.getContext('2d');
-const GW=480,GH=270;
-let SF=1;
+let GW=480,GH=270;   // logical size, derived from the viewport aspect in resize()
+let SF=1,ready=false;
 
 function resize(){
+  // Landscape: fixed 270 tall. Portrait: fixed 300 wide. Either way the game fills the screen.
+  if(innerWidth>=innerHeight){GH=270;GW=Math.round(270*innerWidth/innerHeight);}
+  else{GW=300;GH=Math.round(300*innerHeight/innerWidth);}
   SF=Math.min(innerWidth/GW,innerHeight/GH);
   const d=devicePixelRatio||1;
   cv.style.width=GW*SF+'px'; cv.style.height=GH*SF+'px';
   cv.width=GW*SF*d|0; cv.height=GH*SF*d|0;
   ctx.setTransform(SF*d,0,0,SF*d,0,0);
   ctx.imageSmoothingEnabled=false;
+  if(ready)layout();
 }
 resize(); addEventListener('resize',resize);
 
@@ -104,17 +108,23 @@ const S={
   treats:[],sparks:[],toasts:[],stars:[],
   frame:0,speed:1.8,spawnT:0,spawnI:80,mouth:0,
 };
-for(let i=0;i<55;i++) S.stars.push({x:Math.random()*GW*.78,y:8+Math.random()*(GH-60),r:.5+Math.random()*1.2,t:Math.random()*100});
 
 // ── COWBOY GEOMETRY ──
 // Sprite: P=4, 10 cols × 20 rows = 40×80px, top-left at (CBOY_SX, cowY-38)
 // Mouth is open by default; S.mouth is a chomp timer that closes it briefly on a catch
 // Mouth at row 13, cols 3-5 → y = cowY+14, x = CBOY_SX+12
 const P=4;
-const CBOY_SX=GW-70;
-const MOUTH_DY=14;
-const MOUTH_X=CBOY_SX+3*P;
-const COW_MIN=40, COW_MAX=GH-90;
+const MOUTH_DY=14, COW_MIN=40;
+let CBOY_SX, MOUTH_X, COW_MAX;
+function layout(){
+  CBOY_SX=GW-70; MOUTH_X=CBOY_SX+3*P; COW_MAX=GH-90;
+  S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
+  S.tgtY=Math.max(COW_MIN,Math.min(COW_MAX,S.tgtY));
+  S.stars=[];
+  const n=Math.round(GW*GH/2400);
+  for(let i=0;i<n;i++)S.stars.push({x:Math.random()*(GW-90),y:8+Math.random()*(GH-60),r:.5+Math.random()*1.2,t:Math.random()*100});
+}
+ready=true; layout();
 
 // ── TREAT DEFS (weighted: mostly corn dogs) ──
 const POOL=[];
@@ -344,34 +354,34 @@ function draw(){
   ctx.globalAlpha=1;
 
   // HUD
-  ctx.font='7px "Press Start 2P"';
+  ctx.font='8px "Press Start 2P",monospace';
   ctx.fillStyle='#ffe066';ctx.textAlign='left';ctx.fillText('SCORE',8,14);
   ctx.fillStyle='#fff';ctx.fillText(S.score,8,24);
   ctx.fillStyle=S.streak>=5?'#ff8800':'#888';ctx.textAlign='right';ctx.fillText('STREAK',GW-8,14);
   ctx.fillStyle=S.streak>=5?'#ffcc00':'#fff';ctx.fillText('x'+S.streak,GW-8,24);
   ctx.textAlign='center';ctx.fillStyle='#ff4444';
   for(let i=0;i<S.lives;i++)ctx.fillText('♥',GW/2-(S.lives-1)*10+i*20,14);
-  if(S.streak>=5){ctx.font='6px "Press Start 2P"';ctx.fillStyle='#ff8800';ctx.textAlign='left';ctx.fillText('ON FIRE!',8,36);}
+  if(S.streak>=5){ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#ff8800';ctx.textAlign='left';ctx.fillText('ON FIRE!',8,36);}
 
   S.toasts.forEach(t=>{
     ctx.globalAlpha=Math.min(1,t.life/20);
-    ctx.font=(t.big?'10':'7')+'px "Press Start 2P"';
+    ctx.font=(t.big?'10':'7')+'px "Press Start 2P",monospace';
     ctx.fillStyle=t.col;ctx.textAlign='center';ctx.fillText(t.txt,t.x,t.y);
   });
   ctx.globalAlpha=1;
 
   if(S.frame<180){
     ctx.globalAlpha=Math.max(0,1-S.frame/150);
-    ctx.font='6px "Press Start 2P"';ctx.fillStyle='#aaa';ctx.textAlign='center';
+    ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#aaa';ctx.textAlign='center';
     ctx.fillText('SCROLL / SWIPE UP & DOWN TO CATCH',GW/2,GH-8);
     ctx.globalAlpha=1;
   }
 
   if(S.phase==='gameover'){
     ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(0,0,GW,GH);
-    ctx.fillStyle='#ff4444';ctx.font='14px "Press Start 2P"';ctx.textAlign='center';
+    ctx.fillStyle='#ff4444';ctx.font='14px "Press Start 2P",monospace';ctx.textAlign='center';
     ctx.fillText('GAME OVER',GW/2,GH/2-30);
-    ctx.fillStyle='#ffe066';ctx.font='7px "Press Start 2P"';
+    ctx.fillStyle='#ffe066';ctx.font='7px "Press Start 2P",monospace';
     ctx.fillText('SCORE: '+S.score,GW/2,GH/2-10);
     ctx.fillText('BEST STREAK: x'+S.best,GW/2,GH/2+8);
     if(Math.floor(S.frame/20)%2===0){ctx.fillStyle='#fff';ctx.fillText('TAP TO RIDE AGAIN',GW/2,GH/2+32);}
