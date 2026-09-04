@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Corndog Cowboy</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#08000f;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none}
+
+#intro{
+  position:fixed;inset:0;background:#08000f;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;
+  z-index:10;cursor:pointer;
+}
+#intro.out{animation:fadeOut .7s forwards}
+@keyframes fadeOut{to{opacity:0;pointer-events:none}}
+
+.ititle{
+  font-family:'Press Start 2P',monospace;
+  font-size:clamp(1rem,5vw,2.2rem);
+  color:#ffe066;line-height:1.5;text-align:center;
+  text-shadow:0 0 8px #ff8800,0 0 24px #ff4400,3px 3px 0 #5a1e00;
+}
+#iphoto{
+  position:relative;
+  width:min(42vw,220px);aspect-ratio:3/4;border-radius:6px;overflow:hidden;
+  border:4px solid #c8860a;
+  box-shadow:0 0 0 4px #5a3010,0 0 28px rgba(200,134,10,.55);
+  transition:transform .55s ease-in,opacity .55s ease-in;
+}
+#pix{position:absolute;inset:0;width:100%;height:100%;display:none;image-rendering:pixelated;image-rendering:crisp-edges}
+#iphoto img{width:100%;height:100%;object-fit:cover;object-position:center top}
+#istart{
+  font-family:'Press Start 2P',monospace;
+  font-size:clamp(.45rem,2vw,.72rem);color:#fff;letter-spacing:.08em;
+  animation:blink .9s step-end infinite;
+}
+@keyframes blink{50%{opacity:0}}
+
+#c{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+#sl{
+  position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:repeating-linear-gradient(to bottom,transparent 0,transparent 2px,rgba(0,0,0,.1) 2px,rgba(0,0,0,.1) 4px);
+}
+</style>
+</head>
+<body>
+
+<div id="intro">
+  <div class="ititle">CORNDOG<br>COWBOY</div>
+  <div id="iphoto"><img id="iimg" src="images/corndogcowboy.jpg" alt="Corndog Cowboy"><canvas id="pix"></canvas></div>
+  <div id="istart">&#9654; TAP OR SCROLL TO PLAY</div>
+</div>
+
+<canvas id="c"></canvas>
+<div id="sl"></div>
+
+<script>
+'use strict';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let GW=480,GH=270;   // logical size, derived from the viewport aspect in resize()
+let SF=1,ready=false;
+
+function resize(){
+  // Landscape: fixed 270 tall. Portrait: fixed 300 wide. Either way the game fills the screen.
+  if(innerWidth>=innerHeight){GH=270;GW=Math.round(270*innerWidth/innerHeight);}
+  else{GW=300;GH=Math.round(300*innerHeight/innerWidth);}
+  SF=Math.min(innerWidth/GW,innerHeight/GH);
+  const d=devicePixelRatio||1;
+  cv.style.width=GW*SF+'px'; cv.style.height=GH*SF+'px';
+  cv.width=GW*SF*d|0; cv.height=GH*SF*d|0;
+  ctx.setTransform(SF*d,0,0,SF*d,0,0);
+  ctx.imageSmoothingEnabled=false;
+  if(ready)layout();
+}
+resize(); addEventListener('resize',resize);
+
+// ── AUDIO (chiptune beeps via Web Audio) ──
+let AC=null;
+function initAC(){
+  const Ctor=window.AudioContext||window.webkitAudioContext;
+  if(!Ctor)return;
+  if(!AC)AC=new Ctor();
+  if(AC.state==='suspended')AC.resume();
+}
+function beep(f,d,type='square',v=.12){
+  if(!AC)return;
+  const o=AC.createOscillator(),g=AC.createGain();
+  o.connect(g);g.connect(AC.destination);
+  o.type=type;o.frequency.value=f;
+  g.gain.setValueAtTime(v,AC.currentTime);
+  g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);
+  o.start();o.stop(AC.currentTime+d);
+}
+const SFX={
+  catch:()=>{beep(440,.07);setTimeout(()=>beep(660,.07),55);setTimeout(()=>beep(880,.1),110);},
+  miss: ()=>{beep(200,.08,'sawtooth',.1);setTimeout(()=>beep(130,.12,'sawtooth',.08),70);},
+  streak:()=>[440,550,660,880,1100].forEach((f,i)=>setTimeout(()=>beep(f,.1,'square',.18),i*55)),
+  mega:  ()=>[261,329,392,523,659].forEach((f,i)=>setTimeout(()=>beep(f,.15,'triangle',.2),i*70)),
+};
+
+// ── GAME STATE ──
+const S={
+  phase:'intro',
+  score:0,streak:0,best:0,lives:3,
+  cowY:GH/2,tgtY:GH/2,
+  treats:[],sparks:[],toasts:[],stars:[],
+  frame:0,speed:1.8,spawnT:0,spawnI:80,mouth:0,
+};
+
+// ── COWBOY GEOMETRY ──
+// Sprite: P=3, 22 cols × 36 rows = 66×108px, top-left at (CBOY_SX, cowY-45)
+// Mouth is open by default; S.mouth is a chomp timer that closes it briefly on a catch
+// Mouth at rows 21-23, cols 8-13 → y = cowY+22, x = CBOY_SX+24
+const P=3;
+const MOUTH_DY=22, COW_MIN=45;
+let CBOY_SX, MOUTH_X, COW_MAX;
+// The corn dog stand, laid out as fractions of the logical height
+function stand(){
+  const signH=Math.round(GH*.17);
+  return {signH, bulbY:signH+7, winTop:signH+14, counterY:Math.round(GH*.62), groundY:Math.round(GH*.86)};
+}
+function layout(){
+  CBOY_SX=GW-80; MOUTH_X=CBOY_SX+8*P; COW_MAX=stand().groundY-53;
+  S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
+  S.tgtY=Math.max(COW_MIN,Math.min(COW_MAX,S.tgtY));
+}
+ready=true; layout();
+
+// ── TREAT DEFS (weighted: mostly corn dogs) ──
+const POOL=[];
+[
+  {id:'corndog',pts:10,label:'CORN DOG',    col:'#e8a830',n:5},
+  {id:'turkey', pts:20,label:'TURKEY LEG',  col:'#b05830',n:2},
+  {id:'cotton', pts:15,label:'COTTON CANDY',col:'#ff69b4',n:2},
+  {id:'funnel', pts:25,label:'FUNNEL CAKE', col:'#f4c842',n:1},
+  {id:'lemon',  pts:5, label:'LEMONADE',    col:'#ffe44d',n:2},
+].forEach(t=>{for(let i=0;i<t.n;i++)POOL.push(t);});
+const MEGA={id:'mega',pts:50,label:'MEGA DOG!!',col:'#ff8800'};
+
+function spawn(gap=0){
+  const def=Math.random()<.04?MEGA:POOL[Math.random()*POOL.length|0];
+  const big=def===MEGA;
+  const yMin=COW_MIN+MOUTH_DY-14, yMax=COW_MAX+MOUTH_DY+14;
+  S.treats.push({...def,x:-50-gap,y:yMin+Math.random()*(yMax-yMin),
+    spd:S.speed+(Math.random()-.5)*.5,wob:Math.random()*Math.PI*2,
+    angle:0,checked:false,big});
+}
+function burst(x,y,col,n=8){
+  for(let i=0;i<n;i++){
+    const a=Math.PI*2*i/n+Math.random()*.6,s=1.5+Math.random()*3;
+    S.sparks.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,
+      life:40+Math.random()*20,max:60,col,sz:2+Math.random()*3});
+  }
+}
+function toast(txt,col='#fff',big=false){
+  S.toasts.push({txt,col,big,x:GW/2,y:GH/2-50,vy:-.7,life:80,max:80});
+}
+
+const R=(x,y,w,h,c)=>{ctx.fillStyle=c;ctx.fillRect(x|0,y|0,w,h);};
+
+// ── BACKGROUND: the corn dog stand from the photo ──
+function drawBG(){
+  const L=stand();
+
+  // Sign: green frame, yellow pinstripe, pink field, "CORN DOGS" in white with blue outline
+  R(0,0,GW,L.signH,'#2e7a3c');
+  R(0,3,GW,L.signH-6,'#e8c23a');
+  R(0,5,GW,L.signH-10,'#f2a9da');
+  const fs=Math.min(L.signH*.5,GW/9.5)|0;
+  ctx.font=fs+'px "Press Start 2P",monospace';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.lineJoin='round';ctx.lineWidth=Math.max(2,fs/5);ctx.strokeStyle='#3b7fd9';
+  ctx.strokeText('CORN DOGS',GW/2,L.signH/2+1);
+  ctx.fillStyle='#fbf4ff';ctx.fillText('CORN DOGS',GW/2,L.signH/2+1);
+  ctx.textBaseline='alphabetic';
+  // Two red lamps top-left, like the photo
+  [[7,4],[7,10]].forEach(([x,y],i)=>{ctx.fillStyle=(S.frame>>4)%2===i?'#ff2a2a':'#8a1010';ctx.beginPath();ctx.arc(x,y+1,2.2,0,Math.PI*2);ctx.fill();});
+
+  // Marquee bulbs, chasing
+  for(let i=0,x=8;x<GW;i++,x+=20){
+    const lit=((i+(S.frame>>3))&3)!==0;
+    if(lit){ctx.globalAlpha=.35;ctx.fillStyle='#bfe6ff';ctx.beginPath();ctx.arc(x,L.bulbY,6,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+    R(x-1,L.bulbY-5,2,2,'#556');
+    ctx.fillStyle=lit?'#f4fbff':'#8fa6bd';ctx.beginPath();ctx.arc(x,L.bulbY,2.6,0,Math.PI*2);ctx.fill();
+  }
+
+  // Serving window: blue interior with stainless equipment
+  const wh=L.counterY-L.winTop;
+  R(0,L.winTop,GW,wh,'#1d5fc4');
+  R(0,L.winTop,GW,wh*.35|0,'#2c86dd');
+  R(0,L.winTop,3,wh,'#c9d1d9');R(GW-3,L.winTop,3,wh,'#c9d1d9');       // frame posts
+  const eq=[[.16,.45,.34,'#b4bcc4'],[.62,.55,.2,'#9aa3ac'],[.4,.7,.1,'#e8ecef'],[.52,.7,.1,'#e8ecef']];
+  eq.forEach(([fx,fy,fw,c])=>{const x=GW*fx|0,w=GW*fw|0,h=Math.min(wh*(1-fy),90)|0,y=L.counterY-h;R(x,y,w,h,c);R(x,y,w,3,'#e6eaee');R(x,y+3,w,2,'#6f7880');});
+  for(let y=L.counterY-Math.min(wh*.4,80)|0;y<L.counterY-4;y+=5)R(GW*.63|0,y,GW*.18|0,1,'#6f7880'); // machine vents
+  R(GW*.66|0,L.winTop+6,3,wh*.5|0,'#e3e8ec');                                        // chrome pole
+  ctx.globalAlpha=.12;ctx.fillStyle='#fff';                                          // glass sheen
+  for(let x=-wh;x<GW;x+=46){ctx.beginPath();ctx.moveTo(x,L.counterY);ctx.lineTo(x+wh,L.winTop);ctx.lineTo(x+wh+10,L.winTop);ctx.lineTo(x+10,L.counterY);ctx.fill();}
+  ctx.globalAlpha=1;
+
+  // Counter ledge
+  R(0,L.counterY,GW,6,'#cdd5dd');R(0,L.counterY+6,GW,2,'#7e8791');
+
+  // Front panel: cream bamboo with the small sign, hibiscus, and blue waves
+  const pt=L.counterY+8, ph=L.groundY-pt;
+  R(0,pt,GW,ph,'#efe5c8');
+  for(let x=14;x<GW;x+=38){R(x,pt,3,ph,'#d8c89e');R(x-1,pt+(ph*.4|0),5,2,'#c4b48a');R(x-1,pt+(ph*.8|0),5,2,'#c4b48a');}
+  ctx.font=Math.max(6,ph*.13|0)+'px "Press Start 2P",monospace';ctx.textAlign='left';
+  ctx.fillStyle='#e8749f';ctx.fillText('HAND DIPPED',GW*.16|0,pt+ph*.3|0);
+  ctx.lineWidth=2;ctx.strokeStyle='#3b7fd9';ctx.strokeText('CORN DOGS',GW*.16|0,pt+ph*.55|0);
+  ctx.fillStyle='#fbf4ff';ctx.fillText('CORN DOGS',GW*.16|0,pt+ph*.55|0);
+  [[GW*.09,pt+ph*.28],[GW*.5,pt+ph*.72],[GW*.7,pt+ph*.35]].forEach(([x,y])=>{
+    for(let k=0;k<5;k++){const a=k*Math.PI*2/5;ctx.fillStyle='#f28ac4';ctx.beginPath();ctx.arc(x+Math.cos(a)*4,y+Math.sin(a)*4,3.2,0,Math.PI*2);ctx.fill();}
+    ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.arc(x,y,1.8,0,Math.PI*2);ctx.fill();
+  });
+  const wy=L.groundY-Math.max(8,ph*.22|0);
+  [['#8fc6ff',0],['#3b7fd9',4]].forEach(([c,off])=>{
+    ctx.fillStyle=c;ctx.beginPath();ctx.moveTo(0,L.groundY);
+    for(let x=0;x<=GW;x+=4)ctx.lineTo(x,wy+off+Math.sin((x+S.frame*.6)/9)*2.5);
+    ctx.lineTo(GW,L.groundY);ctx.fill();
+  });
+
+  // Asphalt
+  R(0,L.groundY,GW,GH-L.groundY,'#4b4a52');
+  for(let x=6;x<GW;x+=29)R(x,L.groundY+((x*7)%(GH-L.groundY-4))+2,9,2,'#5a5962');
+}
+
+// ── PIXEL COWBOY: drawn from a pixel map so it can carry the photo's features ──
+// Straw hat with cattleman crease, lattice vents and gold pin, braided band, wide curled brim,
+// hazel eyes, auburn mustache and a big beard that goes gray toward the chin.
+const COW_PAL={
+  W:'#f4eedc',w:'#e0d6b8',d:'#c6b78d',G:'#d4a017',b:'#8a5a2b',c:'#f7efdb',
+  S:'#f3cdb0',s:'#dcab8c',e:'#fbf7ee',H:'#9a8f4a',E:'#2b1b0e',K:'#5b3a1e',
+  B:'#7e4b28',R:'#9d5f33',Y:'#b8aa9b',y:'#d9d2c8',
+  M:'#c0392b',m:'#6e1b16',T:'#fff3e0',t:'#d9534f',
+};
+const COW_MAP=[
+  ".....WWW......WWW.....",
+  "....WWWWWw..wWWWWW....",
+  "....WWWWWWwwWWWWWW....",
+  "....WWWWWWWWWWWWWW....",
+  "....dWdWdWdWdWdWdW....",
+  "....WdWdWGGWdWdWdW....",
+  "....dWdWdWdWdWdWdW....",
+  "....WWWWWWWWWWWWWw....",
+  "WW..bcbcbcbcbcbcbc..WW",
+  "WWWWWWWWWWWWWWWWWWWWWW",
+  "wwwwwwwwwwwwwwwwwwwwww",
+  "....ssSSSSSSSSSSss....",
+  "....sSSSSSSSSSSSSs....",
+  "....sSKKKKSSKKKKSs....",
+  "...SseEHeSSSSeEHesS...",
+  "...SseEHeSSSSeEHesS...",
+  "...ssSSSSSssSSSSSss...",
+  "....BBSSSSssSSSSBB....",
+  "....BBSSSSsssSSSBB....",
+  "....BBSBBBBBBBBSBB....",
+  "....BBBBBBBBBBBBBB....",
+  "...BBBBBMMMMMMBBBBB...",
+  "...BBBBBTmmmmTBBBBB...",
+  "...BBBBBmttttmBBBBB...",
+  "..BBBBBBBBBBBBBBBBBB..",
+  "..BBRBBBBYBBBBRBBBBB..",
+  "..BBBBYBBBBBBYBBBBBB..",
+  "..BYBBBBBYBBBBBBBYBB..",
+  "...BBYBBYBBBYBBYBBB...",
+  "...YBBYBYBBYBYBBYBY...",
+  "....YYBYYBYYBYYBYY....",
+  ".....YYYyYYYYyYYY.....",
+  "......yYYyyYYyYy......",
+  ".......yyYyyYyy.......",
+  "......................",
+  "......................",
+];
+function drawCowboy(sx,sy,mo){
+  // Gray-blue heather shirt behind the beard
+  R(sx,sy+30*P,22*P,6*P,'#97a7ba'); R(sx,sy+30*P,22*P,P,'#7d8ea3');
+  R(sx,sy+32*P,P,4*P,'#7d8ea3'); R(sx+21*P,sy+32*P,P,4*P,'#7d8ea3');
+  for(let gy=0;gy<COW_MAP.length;gy++){
+    const line=COW_MAP[gy];
+    for(let gx=0;gx<line.length;gx++){
+      let ch=line[gx]; if(ch==='.')continue;
+      if(mo&&gy>=21&&gy<=23&&gx>=8&&gx<=13)ch=gy===22?'K':'B';   // chomp: mouth closes into the beard
+      R(sx+gx*P,sy+gy*P,P,P,COW_PAL[ch]);
+    }
+  }
+  R(sx+6*P,sy+14*P,1,1,'#fff');R(sx+14*P,sy+14*P,1,1,'#fff');  // eye glints
+  if(S.streak>=5){
+    ctx.save();ctx.globalAlpha=.18+Math.sin(S.frame*.2)*.08;
+    ctx.fillStyle='#ff8800';ctx.fillRect(sx,sy,22*P,36*P);ctx.restore();
+  }
+}
+
+// ── TREATS ──
+function drawTreat(t){
+  ctx.save();ctx.translate(t.x|0,t.y|0);ctx.rotate(t.angle*Math.PI/180);
+  const sc=t.big?1.6:1;
+  switch(t.id){
+    case'corndog':case'mega':{
+      R(-2*sc,2*sc,4*sc,16*sc,'#c8a060');
+      R(-8*sc,-16*sc,16*sc,20*sc,'#e8a830');
+      R(-6*sc,-20*sc,12*sc,6*sc,'#d09020');
+      R(-4*sc,-24*sc,8*sc,6*sc,'#c08010');
+      R(-2*sc,-26*sc,4*sc,4*sc,'#b07000');
+      R(-5*sc,-18*sc,3*sc,12*sc,'#f4c060');
+      R(3*sc,-16*sc,3*sc,12*sc,'#b07818');
+      if(t.big){
+        [[16,0],[-16,0],[0,-30],[0,10]].forEach(([x,y])=>R(x-3,y-3,6,6,'#ffd700'));
+      }
+      break;
+    }
+    case'cotton':{
+      R(-2,4,4,14,'#deb887');
+      [['#ff69b4',0,-10,10],['#ff1493',-7,-5,8],['#ee44aa',7,-5,8],
+       ['#da70d6',-3,-18,7],['#ff66cc',3,-18,7],['#cc44aa',0,-24,6]
+      ].forEach(([c,x,y,r])=>{ctx.fillStyle=c;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();});
+      break;
+    }
+    case'turkey':{
+      R(-2,8,4,12,'#f5f5dc');
+      ctx.fillStyle='#ddd5a0';ctx.beginPath();ctx.arc(0,20,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#8b4513';ctx.beginPath();ctx.ellipse(0,-2,12,14,0,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#a05530';ctx.beginPath();ctx.ellipse(-3,-6,5,8,-.3,0,Math.PI*2);ctx.fill();
+      break;
+    }
+    case'funnel':{
+      ctx.fillStyle='#e0c890';ctx.beginPath();ctx.ellipse(0,4,14,4,0,0,Math.PI*2);ctx.fill();
+      [['#e8b030',4],['#f4c842',3]].forEach(([c,lw])=>{
+        ctx.strokeStyle=c;ctx.lineWidth=lw;ctx.lineCap='round';
+        for(let i=0;i<3;i++){ctx.beginPath();ctx.arc(0,-3,10-i*3,i*.7,(i+1)*2.4);ctx.stroke();}
+      });
+      ctx.fillStyle='rgba(255,255,255,.7)';
+      [-5,0,5,-3,3].forEach((x,i)=>{ctx.beginPath();ctx.arc(x,-1+i*2,1.2,0,Math.PI*2);ctx.fill();});
+      break;
+    }
+    case'lemon':{
+      ctx.fillStyle='#ffd700';
+      ctx.beginPath();ctx.moveTo(-8,-12);ctx.lineTo(8,-12);ctx.lineTo(6,12);ctx.lineTo(-6,12);ctx.closePath();ctx.fill();
+      ctx.fillStyle='#fff9c4';
+      ctx.beginPath();ctx.moveTo(-6,-6);ctx.lineTo(6,-6);ctx.lineTo(4,10);ctx.lineTo(-4,10);ctx.closePath();ctx.fill();
+      R(2,-18,3,14,'#ff6688');
+      ctx.fillStyle='#ffe000';ctx.beginPath();ctx.arc(-3,-14,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle='#fff59d';ctx.beginPath();ctx.arc(-3,-14,3,0,Math.PI*2);ctx.fill();
+      break;
+    }
+  }
+  ctx.restore();
+}
+
+// ── UPDATE ──
+function update(){
+  if(S.phase!=='playing')return;
+  S.frame++;
+  S.cowY+=(S.tgtY-S.cowY)*.13;
+  S.cowY=Math.max(COW_MIN,Math.min(COW_MAX,S.cowY));
+  if(S.mouth>0)S.mouth--;
+  S.speed=Math.min(5.5,1.8+S.score*.006);
+  S.spawnI=Math.max(38,80-S.score*.15);
+
+  if(++S.spawnT>=S.spawnI){
+    S.spawnT=0; spawn();
+    if(S.score>60&&Math.random()<.28)spawn(120);
+  }
+
+  const mouthY=S.cowY+MOUTH_DY;
+
+  S.treats=S.treats.filter(t=>{
+    t.x+=t.spd;
+    t.y+=Math.sin(t.wob+=.05)*.25;
+    t.angle+=(t.big?2:1.2);
+
+    if(!t.checked&&t.x>=MOUTH_X-6){
+      t.checked=true;
+      if(Math.abs(t.y-mouthY)<24){
+        S.score+=t.pts; S.streak++; S.best=Math.max(S.best,S.streak);
+        S.mouth=10; SFX.catch(); burst(t.x,t.y,t.col,t.big?16:9);
+        if(t.big){SFX.mega();toast('★ MEGA DOG! ★','#ffd700',true);}
+        else if(S.streak===5) {toast('HOT STREAK! +50','#ff8800',true);S.score+=50;SFX.streak();}
+        else if(S.streak===10){toast('ON FIRE! +100','#ff4400',true);S.score+=100;SFX.streak();}
+        else if(S.streak>10&&S.streak%5===0){const b=S.streak*10;toast('★ x'+S.streak+' STREAK! +'+b,'#ffd700',true);S.score+=b;SFX.mega();}
+        else toast('+'+t.pts+'  '+t.label,t.col);
+        return false;
+      } else {
+        S.streak=0; S.lives--; SFX.miss(); toast('MISS!','#ff4444');
+        if(S.lives<=0)S.phase='gameover';
+      }
+    }
+    return t.x<GW+60;
+  });
+
+  S.sparks=S.sparks.filter(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life--;return p.life>0;});
+  S.toasts=S.toasts.filter(t=>{t.y+=t.vy;t.life--;return t.life>0;});
+}
+
+// ── DRAW ──
+function draw(){
+  ctx.clearRect(0,0,GW,GH);
+  drawBG();
+  if(S.phase!=='playing'&&S.phase!=='gameover')return;
+
+  if(S.streak>=3){
+    const my=S.cowY+MOUTH_DY;
+    ctx.globalAlpha=.1+Math.sin(S.frame*.15)*.04;
+    ctx.fillStyle='#ff8800';ctx.fillRect(MOUTH_X-10,my-24,28,48);
+    ctx.globalAlpha=1;
+  }
+
+  S.treats.forEach(drawTreat);
+  drawCowboy(CBOY_SX,S.cowY-45,S.mouth);
+
+  S.sparks.forEach(p=>{
+    ctx.globalAlpha=p.life/p.max;
+    R(p.x-p.sz/2,p.y-p.sz/2,p.sz,p.sz,p.col);
+  });
+  ctx.globalAlpha=1;
+
+  // HUD: dark strip across the top of the serving window
+  const hy=stand().winTop;
+  R(0,hy,GW,26,'rgba(0,0,0,.5)');
+  ctx.font='8px "Press Start 2P",monospace';
+  ctx.fillStyle='#ffe066';ctx.textAlign='left';ctx.fillText('SCORE',8,hy+11);
+  ctx.fillStyle='#fff';ctx.fillText(S.score,8,hy+22);
+  ctx.fillStyle=S.streak>=5?'#ff8800':'#aab';ctx.textAlign='right';ctx.fillText('STREAK',GW-8,hy+11);
+  ctx.fillStyle=S.streak>=5?'#ffcc00':'#fff';ctx.fillText('x'+S.streak,GW-8,hy+22);
+  ctx.textAlign='center';ctx.fillStyle='#ff4444';
+  for(let i=0;i<S.lives;i++)ctx.fillText('♥',GW/2-(S.lives-1)*10+i*20,hy+11);
+  if(S.streak>=5){ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#ff8800';ctx.textAlign='center';ctx.fillText('ON FIRE!',GW/2,hy+22);}
+
+  S.toasts.forEach(t=>{
+    ctx.globalAlpha=Math.min(1,t.life/20);
+    ctx.font=(t.big?'10':'7')+'px "Press Start 2P",monospace';
+    ctx.fillStyle=t.col;ctx.textAlign='center';ctx.fillText(t.txt,t.x,t.y);
+  });
+  ctx.globalAlpha=1;
+
+  if(S.frame<180){
+    ctx.globalAlpha=Math.max(0,1-S.frame/150);
+    ctx.font='6px "Press Start 2P",monospace';ctx.fillStyle='#fff';ctx.textAlign='center';
+    ctx.fillText('SCROLL / SWIPE UP & DOWN TO CATCH',GW/2,GH-8);
+    ctx.globalAlpha=1;
+  }
+
+  if(S.phase==='gameover'){
+    ctx.fillStyle='rgba(0,0,0,.72)';ctx.fillRect(0,0,GW,GH);
+    ctx.fillStyle='#ff4444';ctx.font='14px "Press Start 2P",monospace';ctx.textAlign='center';
+    ctx.fillText('GAME OVER',GW/2,GH/2-30);
+    ctx.fillStyle='#ffe066';ctx.font='7px "Press Start 2P",monospace';
+    ctx.fillText('SCORE: '+S.score,GW/2,GH/2-10);
+    ctx.fillText('BEST STREAK: x'+S.best,GW/2,GH/2+8);
+    if(Math.floor(S.frame/20)%2===0){ctx.fillStyle='#fff';ctx.fillText('TAP TO RIDE AGAIN',GW/2,GH/2+32);}
+  }
+}
+
+(function loop(){update();draw();requestAnimationFrame(loop);})();
+
+// ── INPUT ──
+function clampTgt(dy){S.tgtY=Math.max(COW_MIN,Math.min(COW_MAX,S.tgtY+dy));}
+
+addEventListener('wheel',e=>{
+  initAC();
+  if(S.phase==='intro'){launch();return;}
+  if(S.phase==='playing'){e.preventDefault();clampTgt(e.deltaY*.45);}
+},{passive:false});
+
+addEventListener('keydown',e=>{
+  initAC();
+  if(e.key==='ArrowUp'){e.preventDefault();clampTgt(-18);}
+  if(e.key==='ArrowDown'){e.preventDefault();clampTgt(18);}
+  if((e.key===' '||e.key==='Enter')){
+    if(S.phase==='intro')launch();
+    else if(S.phase==='gameover')restart();
+  }
+});
+
+let lastTY=null;
+cv.addEventListener('touchstart',e=>{
+  initAC();
+  if(S.phase==='gameover'){restart();return;}
+  lastTY=e.touches[0].clientY;e.preventDefault();
+},{passive:false});
+cv.addEventListener('touchmove',e=>{
+  if(S.phase!=='playing'||lastTY===null)return;
+  clampTgt((e.touches[0].clientY-lastTY)/SF);
+  lastTY=e.touches[0].clientY;e.preventDefault();
+},{passive:false});
+cv.addEventListener('touchend',()=>{lastTY=null;});
+cv.addEventListener('click',()=>{initAC();if(S.phase==='gameover')restart();});
+
+// ── START / RESTART ──
+function startGame(){
+  Object.assign(S,{phase:'playing',score:0,streak:0,lives:3,
+    cowY:GH/2,tgtY:GH/2,treats:[],sparks:[],toasts:[],
+    frame:0,speed:1.8,spawnT:0,spawnI:80,mouth:0});
+}
+function restart(){startGame();}
+
+// ── INTRO: photo pixelates in place, then fades into the game (auto after 3s, or on tap/scroll) ──
+const introEl=document.getElementById('intro');
+const photoEl=document.getElementById('iphoto');
+const imgEl=document.getElementById('iimg');
+const pix=document.getElementById('pix');
+let launched=false;
+
+function pixelate(step){
+  // Redraw the cover-cropped photo through a tiny canvas so each source pixel becomes a chunky block
+  const r=photoEl.getBoundingClientRect(), d=devicePixelRatio||1;
+  if(pix.width!==r.width*d|0){pix.width=r.width*d|0;pix.height=r.height*d|0;}
+  const iw=imgEl.naturalWidth, ih=imgEl.naturalHeight;
+  const sc=Math.max(r.width/iw,r.height/ih), sw=r.width/sc, sh=r.height/sc, sx=(iw-sw)/2;
+  const cw=Math.max(1,Math.ceil(r.width/step)), ch=Math.max(1,Math.ceil(r.height/step));
+  const tiny=document.createElement('canvas'); tiny.width=cw; tiny.height=ch;
+  tiny.getContext('2d').drawImage(imgEl,sx,0,sw,sh,0,0,cw,ch);
+  const pc=pix.getContext('2d'); pc.imageSmoothingEnabled=false;
+  pc.drawImage(tiny,0,0,cw,ch,0,0,pix.width,pix.height);
+}
+
+function launch(){
+  if(launched)return; launched=true;
+  const steps=[2,3,4,6,8,12,16,24,32,48];
+  const canPix=imgEl.complete&&imgEl.naturalWidth>0;
+  if(canPix){pix.style.display='block';imgEl.style.visibility='hidden';}
+  let i=0;
+  const tick=()=>{
+    if(canPix&&i<steps.length){pixelate(steps[i++]);setTimeout(tick,85);return;}
+    introEl.classList.add('out');
+    startGame();
+    setTimeout(()=>introEl.style.display='none',700);
+  };
+  tick();
+}
+introEl.addEventListener('click',()=>{initAC();launch();});
+introEl.addEventListener('touchend',e=>{e.preventDefault();initAC();launch();},{passive:false});
+setTimeout(launch,3000);
+</script>
+</body>
+</html>
